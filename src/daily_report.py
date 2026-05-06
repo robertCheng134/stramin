@@ -1,0 +1,52 @@
+def _format_strava_activity(strava_activity):
+    if not strava_activity:
+        return "無 Strava 補充活動"
+
+    distance_km = float(strava_activity.get("distance") or 0) / 1000
+    moving_minutes = int(strava_activity.get("moving_time") or 0) / 60
+
+    return (
+        f"活動名稱：{strava_activity.get('name')}\n"
+        f"距離：{distance_km:.2f} 公里\n"
+        f"移動時間：{moving_minutes:.1f} 分鐘"
+    )
+
+
+def _fallback_recommendation(recovery_level):
+    recommendations = {
+        "good": "可正常訓練。",
+        "moderate": "建議安排中等強度或技術訓練。",
+        "poor": "建議休息、恢復，或只做低強度活動。",
+    }
+    return recommendations.get(recovery_level, "建議保守安排訓練，並觀察身體狀態。")
+
+
+def format_daily_report(
+    garmin_health,
+    recovery_result,
+    strava_activity=None,
+    gpt_analysis=None,
+):
+    recovery_level = recovery_result.get("recovery_level")
+    recommendation = gpt_analysis or _fallback_recommendation(recovery_level)
+
+    return (
+        "Daily Recovery Report\n"
+        "=====================\n\n"
+        f"日期：{garmin_health.get('date')}\n\n"
+        f"Recovery Score：{recovery_result.get('recovery_score')}\n"
+        f"Recovery Level：{recovery_level}\n\n"
+        "Garmin 指標摘要\n"
+        "--------------\n"
+        f"睡眠時數：{garmin_health.get('sleep_hours')} 小時\n"
+        f"HRV 狀態：{garmin_health.get('hrv_status')}\n"
+        f"Body Battery：{garmin_health.get('body_battery')}\n"
+        f"靜息心率：{garmin_health.get('resting_hr')}\n"
+        f"壓力：{garmin_health.get('stress')}\n\n"
+        "Strava 補充活動\n"
+        "--------------\n"
+        f"{_format_strava_activity(strava_activity)}\n\n"
+        "今日建議\n"
+        "--------\n"
+        f"{recommendation}"
+    )

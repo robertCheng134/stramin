@@ -3,6 +3,7 @@ import os
 import requests
 from dotenv import load_dotenv
 
+from daily_report import format_daily_report
 from garmin_health import load_latest_garmin_health_with_source
 from gpt_analysis import analyze_recovery
 from recovery_rules import calculate_recovery
@@ -26,6 +27,7 @@ def main():
     garmin_health, garmin_source = load_latest_garmin_health_with_source()
     recovery = calculate_recovery(garmin_health)
     strava_activity = fetch_strava_activity_if_available()
+    analysis = None
 
     print("Garmin data source:")
     print(f"type: {garmin_source.get('source')}")
@@ -33,36 +35,22 @@ def main():
     if garmin_source.get("message"):
         print(f"notice: {garmin_source.get('message')}")
 
-    print("\nGarmin health:")
-    print(f"date: {garmin_health.get('date')}")
-    print(f"sleep_hours: {garmin_health.get('sleep_hours')}")
-    print(f"hrv_status: {garmin_health.get('hrv_status')}")
-    print(f"body_battery: {garmin_health.get('body_battery')}")
-    print(f"resting_hr: {garmin_health.get('resting_hr')}")
-    print(f"stress: {garmin_health.get('stress')}")
-
-    print("\nRecovery Rules:")
-    print(f"Recovery Score: {recovery.get('recovery_score')}")
-    print(f"Recovery Level: {recovery.get('recovery_level')}")
-
-    if strava_activity:
-        print("\nStrava supplement:")
-        print(f"name: {strava_activity.get('name')}")
-        print(f"distance: {strava_activity.get('distance')}")
-        print(f"moving_time: {strava_activity.get('moving_time')}")
-
-    if not os.getenv("OPENAI_API_KEY"):
+    if os.getenv("OPENAI_API_KEY"):
+        analysis = analyze_recovery(
+            garmin_health=garmin_health,
+            recovery_result=recovery,
+            strava_activity=strava_activity,
+        )
+    else:
         print("\nGPT skipped: Missing OPENAI_API_KEY environment variable.")
-        return
 
-    analysis = analyze_recovery(
+    report = format_daily_report(
         garmin_health=garmin_health,
         recovery_result=recovery,
         strava_activity=strava_activity,
+        gpt_analysis=analysis,
     )
-
-    print("\nGPT 中文分析結果:")
-    print(analysis)
+    print(f"\n{report}")
 
 
 if __name__ == "__main__":
