@@ -1,0 +1,5 @@
+{
+  "preferred_activities": ["weight_training", "walking", "cycling"],
+  "disliked_activities": ["hiit"],
+  "training_goal": "general_fitness"
+}

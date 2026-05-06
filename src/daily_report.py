@@ -27,10 +27,12 @@ def format_daily_report(
     strava_activity=None,
     gpt_analysis=None,
     trend_analysis=None,
+    training_decision=None,
 ):
     recovery_level = recovery_result.get("recovery_level")
     recommendation = gpt_analysis or _fallback_recommendation(recovery_level)
     trend_section = _format_trend_analysis(trend_analysis)
+    decision_section = _format_training_decision(training_decision)
 
     return (
         "Daily Recovery Report\n"
@@ -48,6 +50,9 @@ def format_daily_report(
         "最近 7 天趨勢\n"
         "--------------\n"
         f"{trend_section}\n\n"
+        "今日訓練決策\n"
+        "--------------\n"
+        f"{decision_section}\n\n"
         "Strava 補充活動\n"
         "--------------\n"
         f"{_format_strava_activity(strava_activity)}\n\n"
@@ -65,4 +70,16 @@ def _format_trend_analysis(trend_analysis):
         f"{trend_analysis.get('trend_summary')}\n"
         f"Fatigue Trend：{trend_analysis.get('fatigue_trend')}\n"
         f"Recovery Trend：{trend_analysis.get('recovery_trend')}"
+    )
+
+
+def _format_training_decision(training_decision):
+    if not training_decision:
+        return "無訓練決策資料"
+
+    return (
+        f"Decision：{training_decision.get('decision')}\n"
+        f"Intensity：{training_decision.get('intensity')}\n"
+        f"Suggested Activity：{training_decision.get('suggested_activity')}\n"
+        f"Reason：{training_decision.get('reason')}"
     )
