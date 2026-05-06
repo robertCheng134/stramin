@@ -5,6 +5,9 @@ from datetime import date, datetime
 from garmin_health import GARMIN_HEALTH_CSV_PATH, REQUIRED_FIELDS
 
 
+VALID_HRV_STATUSES = {"balanced", "low", "poor", "unbalanced"}
+
+
 def _prompt_value(label, default=None):
     prompt = f"{label}"
     if default is not None:
@@ -13,6 +16,63 @@ def _prompt_value(label, default=None):
 
     value = input(prompt).strip()
     return value or default
+
+
+def _prompt_float(label, min_value, max_value):
+    while True:
+        value = _prompt_value(label)
+        if value in (None, ""):
+            print(f"Invalid {label}: value is required.")
+            continue
+
+        try:
+            parsed_value = float(value)
+        except ValueError:
+            print(f"Invalid {label}: must be a number.")
+            continue
+
+        if parsed_value < min_value or parsed_value > max_value:
+            print(f"Invalid {label}: must be between {min_value} and {max_value}.")
+            continue
+
+        return str(parsed_value)
+
+
+def _prompt_int(label, min_value, max_value):
+    while True:
+        value = _prompt_value(label)
+        if value in (None, ""):
+            print(f"Invalid {label}: value is required.")
+            continue
+
+        try:
+            parsed_value = int(value)
+        except ValueError:
+            print(f"Invalid {label}: must be an integer.")
+            continue
+
+        if parsed_value < min_value or parsed_value > max_value:
+            print(f"Invalid {label}: must be between {min_value} and {max_value}.")
+            continue
+
+        return str(parsed_value)
+
+
+def _prompt_hrv_status():
+    allowed_values = ", ".join(sorted(VALID_HRV_STATUSES))
+    while True:
+        value = _prompt_value("hrv_status")
+        normalized_value = str(value or "").strip().lower()
+
+        if not normalized_value:
+            print("Invalid hrv_status: value is required.")
+            continue
+
+        if normalized_value not in VALID_HRV_STATUSES:
+            print(f"Invalid hrv_status: must be one of {allowed_values}.")
+            continue
+
+        return normalized_value
 
 
 def _load_existing_rows(path):
@@ -59,10 +119,10 @@ def _validate_date(value):
 def collect_garmin_entry(entry_date):
     return {
         "date": entry_date,
-        "sleep_hours": _prompt_value("sleep_hours"),
-        "hrv_status": _prompt_value("hrv_status"),
-        "body_battery": _prompt_value("body_battery"),
-        "resting_hr": _prompt_value("resting_hr"),
+        "sleep_hours": _prompt_float("sleep_hours", 0, 24),
+        "hrv_status": _prompt_hrv_status(),
+        "body_battery": _prompt_int("body_battery", 0, 100),
+        "resting_hr": _prompt_int("resting_hr", 20, 120),
     }
 
 

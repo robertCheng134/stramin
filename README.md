@@ -64,6 +64,12 @@ python3 src/add_garmin_entry.py
 python3 src/main.py
 ```
 
+Run the full morning check flow:
+
+```bash
+python3 src/morning_check.py
+```
+
 Add or update a specific date:
 
 ```bash

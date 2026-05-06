@@ -1,4 +1,5 @@
 import csv
+from datetime import datetime
 from pathlib import Path
 
 
@@ -10,6 +11,7 @@ REQUIRED_FIELDS = [
     "resting_hr",
 ]
 OPTIONAL_FIELDS = ["stress"]
+VALID_HRV_STATUSES = {"balanced", "low", "poor", "unbalanced"}
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 GARMIN_HEALTH_CSV_PATH = DATA_DIR / "garmin_health.csv"
@@ -44,6 +46,50 @@ def resolve_garmin_health_csv(csv_path=None):
     }
 
 
+def _validate_date(value):
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _validate_float_range(value, min_value, max_value):
+    try:
+        parsed_value = float(value)
+    except (TypeError, ValueError):
+        return False
+    return min_value <= parsed_value <= max_value
+
+
+def _validate_int_range(value, min_value, max_value):
+    try:
+        parsed_value = int(value)
+    except (TypeError, ValueError):
+        return False
+    return str(value).strip() == str(parsed_value) and min_value <= parsed_value <= max_value
+
+
+def _validate_garmin_row(row):
+    if not _validate_date(row.get("date")):
+        return "date must be YYYY-MM-DD"
+
+    if not _validate_float_range(row.get("sleep_hours"), 0, 24):
+        return "sleep_hours must be a 0~24 float"
+
+    hrv_status = str(row.get("hrv_status") or "").strip().lower()
+    if hrv_status not in VALID_HRV_STATUSES:
+        return "hrv_status must be balanced/low/poor/unbalanced"
+
+    if not _validate_int_range(row.get("body_battery"), 0, 100):
+        return "body_battery must be a 0~100 int"
+
+    if not _validate_int_range(row.get("resting_hr"), 20, 120):
+        return "resting_hr must be a 20~120 int"
+
+    return None
+
+
 def load_garmin_health_rows(csv_path=None):
     source_info = resolve_garmin_health_csv(csv_path)
     path = source_info["path"]
@@ -68,10 +114,20 @@ def load_garmin_health_rows(csv_path=None):
 
         rows = []
         for row in reader:
-            rows.append({field: row.get(field, "").strip() for field in fields})
+            normalized_row = {
+                field: row.get(field, "").strip() for field in fields
+            }
+            normalized_row["hrv_status"] = normalized_row["hrv_status"].lower()
+
+            invalid_reason = _validate_garmin_row(normalized_row)
+            if invalid_reason:
+                print(f"Skipping invalid Garmin row: {invalid_reason}")
+                continue
+
+            rows.append(normalized_row)
 
     if not rows:
-        raise ValueError("Garmin health CSV has no data rows.")
+        raise ValueError("No valid Garmin health data found.")
 
     return rows
 
