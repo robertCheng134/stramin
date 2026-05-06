@@ -3,7 +3,7 @@ import os
 import requests
 from dotenv import load_dotenv
 
-from garmin_health import load_latest_garmin_health
+from garmin_health import load_latest_garmin_health_with_source
 from gpt_analysis import analyze_recovery
 from recovery_rules import calculate_recovery
 from strava import fetch_latest_activity
@@ -23,11 +23,17 @@ def fetch_strava_activity_if_available():
 def main():
     load_dotenv()
 
-    garmin_health = load_latest_garmin_health()
+    garmin_health, garmin_source = load_latest_garmin_health_with_source()
     recovery = calculate_recovery(garmin_health)
     strava_activity = fetch_strava_activity_if_available()
 
-    print("Garmin health:")
+    print("Garmin data source:")
+    print(f"type: {garmin_source.get('source')}")
+    print(f"path: {garmin_source.get('path')}")
+    if garmin_source.get("message"):
+        print(f"notice: {garmin_source.get('message')}")
+
+    print("\nGarmin health:")
     print(f"date: {garmin_health.get('date')}")
     print(f"sleep_hours: {garmin_health.get('sleep_hours')}")
     print(f"hrv_status: {garmin_health.get('hrv_status')}")
