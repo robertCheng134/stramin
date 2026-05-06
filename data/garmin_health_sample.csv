@@ -1,0 +1,4 @@
+date,sleep_hours,hrv_status,body_battery,resting_hr,stress
+2026-05-04,6.4,balanced,63,52,34
+2026-05-05,7.1,balanced,72,50,28
+2026-05-06,5.8,low,45,56,51
