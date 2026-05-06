@@ -8,6 +8,7 @@ from garmin_health import load_latest_garmin_health_with_source
 from gpt_analysis import analyze_recovery
 from recovery_rules import calculate_recovery
 from strava import fetch_latest_activity
+from trend_analysis import analyze_recent_trends
 
 
 def fetch_strava_activity_if_available():
@@ -26,6 +27,7 @@ def main():
 
     garmin_health, garmin_source = load_latest_garmin_health_with_source()
     recovery = calculate_recovery(garmin_health)
+    trends = analyze_recent_trends(garmin_source["path"])
     strava_activity = fetch_strava_activity_if_available()
     analysis = None
 
@@ -49,6 +51,7 @@ def main():
         recovery_result=recovery,
         strava_activity=strava_activity,
         gpt_analysis=analysis,
+        trend_analysis=trends,
     )
     print(f"\n{report}")
 

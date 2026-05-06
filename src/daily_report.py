@@ -26,9 +26,11 @@ def format_daily_report(
     recovery_result,
     strava_activity=None,
     gpt_analysis=None,
+    trend_analysis=None,
 ):
     recovery_level = recovery_result.get("recovery_level")
     recommendation = gpt_analysis or _fallback_recommendation(recovery_level)
+    trend_section = _format_trend_analysis(trend_analysis)
 
     return (
         "Daily Recovery Report\n"
@@ -43,10 +45,24 @@ def format_daily_report(
         f"Body Battery：{garmin_health.get('body_battery')}\n"
         f"靜息心率：{garmin_health.get('resting_hr')}\n"
         f"壓力：{garmin_health.get('stress')}\n\n"
+        "最近 7 天趨勢\n"
+        "--------------\n"
+        f"{trend_section}\n\n"
         "Strava 補充活動\n"
         "--------------\n"
         f"{_format_strava_activity(strava_activity)}\n\n"
         "今日建議\n"
         "--------\n"
         f"{recommendation}"
+    )
+
+
+def _format_trend_analysis(trend_analysis):
+    if not trend_analysis:
+        return "無趨勢資料"
+
+    return (
+        f"{trend_analysis.get('trend_summary')}\n"
+        f"Fatigue Trend：{trend_analysis.get('fatigue_trend')}\n"
+        f"Recovery Trend：{trend_analysis.get('recovery_trend')}"
     )
