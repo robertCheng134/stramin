@@ -22,14 +22,14 @@ personal health data.
 Required columns:
 
 ```csv
-date,sleep_hours,hrv_status,body_battery,resting_hr,stress
+date,sleep_hours,hrv_status,body_battery,resting_hr
 ```
 
 Example:
 
 ```csv
-date,sleep_hours,hrv_status,body_battery,resting_hr,stress
-2026-05-06,5.8,low,45,56,51
+date,sleep_hours,hrv_status,body_battery,resting_hr
+2026-05-06,5.8,low,45,56
 ```
 
 Column notes:
@@ -39,7 +39,10 @@ Column notes:
 - `hrv_status`: Garmin HRV status, such as `balanced`, `low`, `poor`, or `unbalanced`
 - `body_battery`: Garmin Body Battery score
 - `resting_hr`: resting heart rate
-- `stress`: Garmin stress score
+
+Optional columns:
+
+- `stress`: Garmin stress score. If present, it is used in recovery and trend analysis.
 
 ## Run
 
@@ -51,6 +54,22 @@ python3 src/main.py
 
 `OPENAI_API_KEY` is optional. If it is missing, the app prints the rule-based
 recovery score and skips GPT analysis.
+
+## Add Garmin Entry
+
+Manually add today's Garmin health data:
+
+```bash
+python3 src/add_garmin_entry.py
+python3 src/main.py
+```
+
+Add or update a specific date:
+
+```bash
+python3 src/add_garmin_entry.py --date 2026-05-01
+python3 src/main.py
+```
 
 ## Test
 

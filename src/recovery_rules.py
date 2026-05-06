@@ -14,7 +14,8 @@ def calculate_recovery(garmin_health):
     sleep_hours = _to_float(garmin_health.get("sleep_hours"))
     hrv_status = str(garmin_health.get("hrv_status") or "").strip().lower()
     body_battery = _to_float(garmin_health.get("body_battery"))
-    stress = _to_float(garmin_health.get("stress"))
+    stress_value = garmin_health.get("stress")
+    stress = _to_float(stress_value) if stress_value not in (None, "") else None
 
     if sleep_hours < 6:
         score -= 25
@@ -25,7 +26,7 @@ def calculate_recovery(garmin_health):
     if body_battery < 50:
         score -= 15
 
-    if stress > 50:
+    if stress is not None and stress > 50:
         score -= 10
 
     recovery_score = max(0, min(100, score))

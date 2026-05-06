@@ -12,6 +12,13 @@ def _format_strava_activity(strava_activity):
     )
 
 
+def _format_optional_stress(garmin_health):
+    stress = garmin_health.get("stress")
+    if stress in (None, ""):
+        return ""
+    return f"壓力：{stress}\n"
+
+
 def _fallback_recommendation(recovery_level):
     recommendations = {
         "good": "可正常訓練。",
@@ -46,7 +53,7 @@ def format_daily_report(
         f"HRV 狀態：{garmin_health.get('hrv_status')}\n"
         f"Body Battery：{garmin_health.get('body_battery')}\n"
         f"靜息心率：{garmin_health.get('resting_hr')}\n"
-        f"壓力：{garmin_health.get('stress')}\n\n"
+        f"{_format_optional_stress(garmin_health)}\n"
         "最近 7 天趨勢\n"
         "--------------\n"
         f"{trend_section}\n\n"

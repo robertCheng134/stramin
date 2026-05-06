@@ -18,6 +18,13 @@ def _format_strava_activity(strava_activity):
     )
 
 
+def _format_optional_stress(garmin_health):
+    stress = garmin_health.get("stress")
+    if stress in (None, ""):
+        return "- 壓力：未提供\n"
+    return f"- 壓力：{stress}\n"
+
+
 def analyze_recovery(garmin_health, recovery_result, strava_activity=None):
     load_dotenv()
 
@@ -48,7 +55,7 @@ def analyze_recovery(garmin_health, recovery_result, strava_activity=None):
                     f"- HRV 狀態：{garmin_health.get('hrv_status')}\n"
                     f"- Body Battery：{garmin_health.get('body_battery')}\n"
                     f"- 靜息心率：{garmin_health.get('resting_hr')}\n"
-                    f"- 壓力：{garmin_health.get('stress')}\n\n"
+                    f"{_format_optional_stress(garmin_health)}\n"
                     "規則系統恢復結果：\n"
                     f"- recovery_score：{recovery_result.get('recovery_score')}\n"
                     f"- recovery_level：{recovery_result.get('recovery_level')}\n"
