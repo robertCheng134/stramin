@@ -51,3 +51,9 @@ python3 src/main.py
 
 `OPENAI_API_KEY` is optional. If it is missing, the app prints the rule-based
 recovery score and skips GPT analysis.
+
+## Test
+
+```bash
+python3 -m pytest
+```
