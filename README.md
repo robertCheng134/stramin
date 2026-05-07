@@ -1,5 +1,4 @@
 # stramin
-#im gay
 
 AI-powered Garmin recovery and training recommendation system.
 
