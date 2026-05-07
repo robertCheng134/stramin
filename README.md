@@ -61,6 +61,41 @@ from existing data.
 - `src/gpt_analysis.py`: adds optional GPT coaching analysis.
 - `src/user_profile.py`: loads user preferences and planning configuration.
 
+## Garmin-First Workflow
+
+Garmin CSV is the primary supported health workflow in stramin.
+
+The recommended daily flow is:
+
+```bash
+python3 src/morning_check.py
+```
+
+This prompts for Garmin morning metrics, writes them to:
+
+```text
+data/garmin_health.csv
+```
+
+Then it runs recovery scoring, trend analysis, the decision engine, and the
+weekly planner.
+
+If `data/garmin_health.csv` does not exist, report generation falls back to:
+
+```text
+data/garmin_health_sample.csv
+```
+
+That fallback is for demos and tests. To use real data, create
+`data/garmin_health.csv` directly or run:
+
+```bash
+python3 src/add_garmin_entry.py
+```
+
+Apple Health and Samsung Health adapters exist as future extension points, but
+they do not implement real imports yet. Garmin CSV remains the supported path.
+
 ## Data Sources
 
 ### Garmin CSV

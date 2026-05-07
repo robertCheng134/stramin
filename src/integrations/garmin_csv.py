@@ -44,8 +44,12 @@ def resolve_garmin_health_csv(csv_path=None):
         "source": "sample",
         "is_sample": True,
         "message": (
-            f"{GARMIN_HEALTH_CSV_PATH} not found. "
-            f"Using sample data from {SAMPLE_CSV_PATH}."
+            "Garmin CSV not found at "
+            f"{GARMIN_HEALTH_CSV_PATH}. "
+            "Using sample Garmin data from "
+            f"{SAMPLE_CSV_PATH}. "
+            "Create data/garmin_health.csv or run "
+            "python3 src/add_garmin_entry.py to use real data."
         ),
     }
 
@@ -76,20 +80,23 @@ def _validate_int_range(value, min_value, max_value):
 
 def _validate_garmin_row(row):
     if not _validate_date(row.get("date")):
-        return "date must be YYYY-MM-DD"
+        return f"date '{row.get('date')}' must use YYYY-MM-DD"
 
     if not _validate_float_range(row.get("sleep_hours"), 0, 24):
-        return "sleep_hours must be a 0~24 float"
+        return f"sleep_hours '{row.get('sleep_hours')}' must be a number from 0 to 24"
 
     hrv_status = str(row.get("hrv_status") or "").strip().lower()
     if hrv_status not in VALID_HRV_STATUSES:
-        return "hrv_status must be balanced/low/poor/unbalanced"
+        return (
+            f"hrv_status '{row.get('hrv_status')}' must be one of "
+            "balanced, low, poor, unbalanced"
+        )
 
     if not _validate_int_range(row.get("body_battery"), 0, 100):
-        return "body_battery must be a 0~100 int"
+        return f"body_battery '{row.get('body_battery')}' must be an integer from 0 to 100"
 
     if not _validate_int_range(row.get("resting_hr"), 20, 120):
-        return "resting_hr must be a 20~120 int"
+        return f"resting_hr '{row.get('resting_hr')}' must be an integer from 20 to 120"
 
     return None
 
