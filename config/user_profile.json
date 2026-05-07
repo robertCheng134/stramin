@@ -3,5 +3,18 @@
   "disliked_activities": ["hiit"],
   "training_goal": "general_fitness",
   "available_days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
-  "max_training_days_per_week": 4
+  "max_training_days_per_week": 4,
+  "weekly_structure": {
+    "Monday": "weight_training",
+    "Tuesday": "walking",
+    "Wednesday": "rest",
+    "Thursday": "weight_training",
+    "Friday": "cycling",
+    "Saturday": "weight_training",
+    "Sunday": "rest"
+  },
+  "priority_muscle_groups": ["chest", "back", "legs"],
+  "preferred_training_time": "evening",
+  "rest_days": ["Sunday"],
+  "session_duration_minutes": 60
 }

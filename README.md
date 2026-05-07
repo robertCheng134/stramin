@@ -100,6 +100,37 @@ Generate the daily report from existing CSV data:
 python3 src/main.py
 ```
 
+## User Profile
+
+Personal preferences live in:
+
+```text
+config/user_profile.json
+```
+
+The weekly planner uses `weekly_structure` as the starting plan, then adjusts
+activity and intensity based on recovery and fatigue.
+
+Example settings:
+
+```json
+{
+  "weekly_structure": {
+    "Monday": "weight_training",
+    "Tuesday": "walking",
+    "Wednesday": "rest",
+    "Thursday": "weight_training",
+    "Friday": "cycling",
+    "Saturday": "weight_training",
+    "Sunday": "rest"
+  },
+  "priority_muscle_groups": ["chest", "back", "legs"],
+  "preferred_training_time": "evening",
+  "rest_days": ["Sunday"],
+  "session_duration_minutes": 60
+}
+```
+
 ## Run Tests
 
 ```bash
