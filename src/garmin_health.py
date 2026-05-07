@@ -2,6 +2,8 @@ import csv
 from datetime import datetime
 from pathlib import Path
 
+from logger import get_logger
+
 
 REQUIRED_FIELDS = [
     "date",
@@ -16,6 +18,7 @@ VALID_HRV_STATUSES = {"balanced", "low", "poor", "unbalanced"}
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 GARMIN_HEALTH_CSV_PATH = DATA_DIR / "garmin_health.csv"
 SAMPLE_CSV_PATH = DATA_DIR / "garmin_health_sample.csv"
+logger = get_logger(__name__)
 
 
 def resolve_garmin_health_csv(csv_path=None):
@@ -121,7 +124,7 @@ def load_garmin_health_rows(csv_path=None):
 
             invalid_reason = _validate_garmin_row(normalized_row)
             if invalid_reason:
-                print(f"Skipping invalid Garmin row: {invalid_reason}")
+                logger.warning("Skipping invalid Garmin row: %s", invalid_reason)
                 continue
 
             rows.append(normalized_row)
