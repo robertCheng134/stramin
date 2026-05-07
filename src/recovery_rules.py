@@ -8,12 +8,13 @@ def _to_float(value, default=0):
         return default
 
 
-def calculate_recovery(garmin_health):
+def calculate_recovery(garmin_health, baseline=None):
     score = 100
 
     sleep_hours = _to_float(garmin_health.get("sleep_hours"))
     hrv_status = str(garmin_health.get("hrv_status") or "").strip().lower()
     body_battery = _to_float(garmin_health.get("body_battery"))
+    resting_hr = _to_float(garmin_health.get("resting_hr"))
     stress_value = garmin_health.get("stress")
     stress = _to_float(stress_value) if stress_value not in (None, "") else None
 
@@ -28,6 +29,11 @@ def calculate_recovery(garmin_health):
 
     if stress is not None and stress > 50:
         score -= 10
+
+    if baseline and baseline.get("baseline_status") == "ready":
+        average_resting_hr = baseline.get("average_resting_hr")
+        if average_resting_hr is not None and resting_hr >= average_resting_hr + 8:
+            score -= 10
 
     recovery_score = max(0, min(100, score))
 

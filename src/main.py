@@ -3,9 +3,10 @@ import os
 import requests
 from dotenv import load_dotenv
 
+from baseline import calculate_baseline
 from decision_engine import make_training_decision
 from daily_report import format_daily_report
-from garmin_health import load_latest_garmin_health_with_source
+from garmin_health import load_garmin_health_rows, load_latest_garmin_health_with_source
 from gpt_analysis import analyze_recovery
 from recovery_rules import calculate_recovery
 from strava import fetch_latest_activity
@@ -30,8 +31,10 @@ def main():
     load_dotenv()
 
     garmin_health, garmin_source = load_latest_garmin_health_with_source()
+    garmin_rows = load_garmin_health_rows(garmin_source["path"])
+    baseline = calculate_baseline(garmin_rows)
     user_profile = load_user_profile()
-    recovery = calculate_recovery(garmin_health)
+    recovery = calculate_recovery(garmin_health, baseline=baseline)
     trends = analyze_recent_trends(garmin_source["path"])
     strava_activity = fetch_strava_activity_if_available()
     decision = make_training_decision(
@@ -74,6 +77,7 @@ def main():
         gpt_analysis=analysis,
         trend_analysis=trends,
         training_decision=decision,
+        baseline=baseline,
     )
     print(f"\n{report}")
     print(f"\n{format_weekly_report(weekly_plan)}")
