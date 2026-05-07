@@ -9,16 +9,17 @@ from daily_report import format_daily_report
 from garmin_health import load_garmin_health_rows, load_latest_garmin_health_with_source
 from gpt_analysis import analyze_recovery
 from recovery_rules import calculate_recovery
-from strava import fetch_latest_activity
+from strava import fetch_recent_activities
+from training_load import analyze_training_load
 from trend_analysis import analyze_recent_trends
 from user_profile import load_user_profile
 from weekly_planner import generate_weekly_plan
 from weekly_report import format_weekly_report
 
 
-def fetch_strava_activity_if_available():
+def fetch_strava_activities_if_available():
     try:
-        return fetch_latest_activity()
+        return fetch_recent_activities(per_page=10)
     except RuntimeError as error:
         print(f"Strava skipped: {error}")
     except requests.RequestException as error:
@@ -36,18 +37,26 @@ def main():
     user_profile = load_user_profile()
     recovery = calculate_recovery(garmin_health, baseline=baseline)
     trends = analyze_recent_trends(garmin_source["path"])
-    strava_activity = fetch_strava_activity_if_available()
+    strava_activities = fetch_strava_activities_if_available()
+    strava_activity = strava_activities[0] if strava_activities else None
+    training_load = (
+        analyze_training_load(strava_activities, user_profile=user_profile)
+        if strava_activities is not None
+        else None
+    )
     decision = make_training_decision(
         recovery_result=recovery,
         trend_result=trends,
         garmin_health=garmin_health,
         strava_activity=strava_activity,
         user_profile=user_profile,
+        training_load=training_load,
     )
     weekly_plan = generate_weekly_plan(
         recovery_result=recovery,
         trend_result=trends,
         user_profile=user_profile,
+        training_load=training_load,
     )
     analysis = None
 
@@ -78,6 +87,7 @@ def main():
         trend_analysis=trends,
         training_decision=decision,
         baseline=baseline,
+        training_load=training_load,
     )
     print(f"\n{report}")
     print(f"\n{format_weekly_report(weekly_plan)}")

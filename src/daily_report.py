@@ -36,12 +36,14 @@ def format_daily_report(
     trend_analysis=None,
     training_decision=None,
     baseline=None,
+    training_load=None,
 ):
     recovery_level = recovery_result.get("recovery_level")
     recommendation = gpt_analysis or _fallback_recommendation(recovery_level)
     trend_section = _format_trend_analysis(trend_analysis)
     decision_section = _format_training_decision(training_decision)
     baseline_section = _format_baseline(baseline)
+    training_load_section = _format_training_load(training_load)
 
     return (
         "Daily Recovery Report\n"
@@ -65,6 +67,9 @@ def format_daily_report(
         "今日訓練決策\n"
         "--------------\n"
         f"{decision_section}\n\n"
+        "Training Load\n"
+        "--------------\n"
+        f"{training_load_section}\n\n"
         "Strava 補充活動\n"
         "--------------\n"
         f"{_format_strava_activity(strava_activity)}\n\n"
@@ -106,4 +111,19 @@ def _format_baseline(baseline):
         f"Average Sleep Hours：{baseline.get('average_sleep_hours')}\n"
         f"Average Body Battery：{baseline.get('average_body_battery')}\n"
         f"Average Resting HR：{baseline.get('average_resting_hr')}"
+    )
+
+
+def _format_training_load(training_load):
+    if not training_load:
+        return "無 Strava training load 資料"
+
+    return (
+        f"Baseline：{training_load.get('weekly_training_minutes_baseline')}\n"
+        f"High Threshold：{training_load.get('high_load_threshold')}\n"
+        f"Current 7-Day Minutes：{training_load.get('last_7_days_total_minutes')}\n"
+        f"Current 3-Day Minutes：{training_load.get('last_3_days_total_minutes')}\n"
+        f"Activity Count 7 Days：{training_load.get('activity_count_7_days')}\n"
+        f"Training Load Level：{training_load.get('training_load_level')}\n"
+        f"Overreaching Risk：{training_load.get('overreaching_risk')}"
     )
