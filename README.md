@@ -147,6 +147,41 @@ Validation rules:
 
 Invalid rows are skipped and never enter analysis or reports.
 
+### GarminDB Import
+
+v4.0-alpha.1 adds the first real Garmin data integration through GarminDB. The
+adapter reads Garmin health/body data from a local SQLite database and converts
+valid rows into stramin's normalized `HealthData` model.
+
+Set the database path in `.env`:
+
+```env
+GARMINDB_PATH=/path/to/garmin.db
+```
+
+The adapter can also receive a database path directly from code:
+
+```python
+from integrations.garmindb import load_health_data
+
+health_rows = load_health_data("/path/to/garmin.db")
+```
+
+Supported GarminDB-style daily summary tables include:
+
+- `DailySummary`
+- `daily_summary`
+- `daily_health_metrics`
+- `health_daily`
+
+The adapter looks for daily health columns such as date/day, sleep hours or
+minutes, HRV status or HRV value, body battery, resting heart rate, and optional
+stress. It handles missing paths, missing database files, missing expected
+tables, empty query results, and invalid rows with clear errors or warnings.
+
+Garmin CSV, manual entry, and Telegram entry remain fully supported. GarminDB is
+an import adapter; Strava remains the workout/activity source.
+
 ### Optional Strava Context
 
 Strava is used only when `STRAVA_ACCESS_TOKEN` is available.
