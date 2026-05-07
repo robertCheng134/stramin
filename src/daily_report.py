@@ -102,8 +102,10 @@ def _format_training_load(training_load):
         return "無 Strava training load 資料"
 
     return (
-        f"Last 7 Days Total Minutes：{training_load.get('last_7_days_total_minutes')}\n"
-        f"Last 3 Days Total Minutes：{training_load.get('last_3_days_total_minutes')}\n"
+        f"Baseline：{training_load.get('weekly_training_minutes_baseline')}\n"
+        f"High Threshold：{training_load.get('high_load_threshold')}\n"
+        f"Current 7-Day Minutes：{training_load.get('last_7_days_total_minutes')}\n"
+        f"Current 3-Day Minutes：{training_load.get('last_3_days_total_minutes')}\n"
         f"Activity Count 7 Days：{training_load.get('activity_count_7_days')}\n"
         f"Training Load Level：{training_load.get('training_load_level')}\n"
         f"Overreaching Risk：{training_load.get('overreaching_risk')}"

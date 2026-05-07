@@ -37,7 +37,7 @@ def main():
     strava_activities = fetch_strava_activities_if_available()
     strava_activity = strava_activities[0] if strava_activities else None
     training_load = (
-        analyze_training_load(strava_activities)
+        analyze_training_load(strava_activities, user_profile=user_profile)
         if strava_activities is not None
         else None
     )
