@@ -285,6 +285,37 @@ python3 src/add_garmin_entry.py
 python3 src/add_garmin_entry.py --date 2026-05-01
 ```
 
+## Telegram Bot Usage
+
+stramin can also run as a Telegram bot interface over the same Garmin-first
+workflow. The bot does not replace the CSV workflow; `/today` and `/weekly`
+generate the same daily and weekly outputs that the CLI uses.
+
+Set the bot token in `.env`:
+
+```env
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+```
+
+Start the bot:
+
+```bash
+python3 src/telegram_bot.py
+```
+
+Supported commands:
+
+- `/start`: intro message
+- `/help`: command list
+- `/today`: Garmin-first daily recovery recommendation
+- `/weekly`: adaptive weekly training plan
+
+Optional integrations behave the same as the CLI:
+
+- Missing Garmin CSV falls back to `data/garmin_health_sample.csv`.
+- Missing or unavailable Strava leaves training load empty.
+- Missing or unavailable GPT falls back to rule-based reporting.
+
 ## Testing
 
 Run the full test suite:
