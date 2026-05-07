@@ -61,6 +61,41 @@ from existing data.
 - `src/gpt_analysis.py`: adds optional GPT coaching analysis.
 - `src/user_profile.py`: loads user preferences and planning configuration.
 
+## Garmin-First Workflow
+
+Garmin CSV is the primary supported health workflow in stramin.
+
+The recommended daily flow is:
+
+```bash
+python3 src/morning_check.py
+```
+
+This prompts for Garmin morning metrics, writes them to:
+
+```text
+data/garmin_health.csv
+```
+
+Then it runs recovery scoring, trend analysis, the decision engine, and the
+weekly planner.
+
+If `data/garmin_health.csv` does not exist, report generation falls back to:
+
+```text
+data/garmin_health_sample.csv
+```
+
+That fallback is for demos and tests. To use real data, create
+`data/garmin_health.csv` directly or run:
+
+```bash
+python3 src/add_garmin_entry.py
+```
+
+Apple Health and Samsung Health adapters exist as future extension points, but
+they do not implement real imports yet. Garmin CSV remains the supported path.
+
 ## Data Sources
 
 ### Garmin CSV
@@ -249,6 +284,37 @@ Manually add or update a Garmin entry:
 python3 src/add_garmin_entry.py
 python3 src/add_garmin_entry.py --date 2026-05-01
 ```
+
+## Telegram Bot Usage
+
+stramin can also run as a Telegram bot interface over the same Garmin-first
+workflow. The bot does not replace the CSV workflow; `/today` and `/weekly`
+generate the same daily and weekly outputs that the CLI uses.
+
+Set the bot token in `.env`:
+
+```env
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+```
+
+Start the bot:
+
+```bash
+python3 src/telegram_bot.py
+```
+
+Supported commands:
+
+- `/start`: intro message
+- `/help`: command list
+- `/today`: Garmin-first daily recovery recommendation
+- `/weekly`: adaptive weekly training plan
+
+Optional integrations behave the same as the CLI:
+
+- Missing Garmin CSV falls back to `data/garmin_health_sample.csv`.
+- Missing or unavailable Strava leaves training load empty.
+- Missing or unavailable GPT falls back to rule-based reporting.
 
 ## Testing
 
