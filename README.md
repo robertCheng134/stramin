@@ -288,7 +288,8 @@ python3 src/add_garmin_entry.py --date 2026-05-01
 ## Telegram Bot Usage
 
 stramin can also run as a Telegram bot interface over the same Garmin-first
-workflow. The bot does not replace the CSV workflow; `/today` and `/weekly`
+workflow. The bot does not replace the CSV workflow; `/entry` writes today's
+Garmin metrics to `data/garmin_health.csv`, while `/today` and `/weekly`
 generate the same daily and weekly outputs that the CLI uses.
 
 Set the bot token in `.env`:
@@ -309,6 +310,14 @@ Supported commands:
 - `/help`: command list
 - `/today`: Garmin-first daily recovery recommendation
 - `/weekly`: adaptive weekly training plan
+- `/entry`: guided Garmin morning data entry for today
+- `/cancel`: cancel an active `/entry` flow
+
+The `/entry` flow asks for `sleep_hours`, `hrv_status`, `body_battery`,
+`resting_hr`, and optional `stress`. Values use the same validation rules as
+the CLI and Garmin CSV reader. If today's row already exists, the bot updates
+that row; otherwise it appends a new one. After saving, the bot confirms the
+entry and tries to show today's recommendation.
 
 Optional integrations behave the same as the CLI:
 

@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import date
 
 import requests
 from dotenv import load_dotenv
@@ -7,6 +8,7 @@ from dotenv import load_dotenv
 from baseline import calculate_baseline
 from daily_report import format_daily_report
 from decision_engine import make_training_decision
+from garmin_health import GARMIN_HEALTH_CSV_PATH
 from garmin_health import load_garmin_health_rows, load_latest_garmin_health_with_source
 from gpt_analysis import analyze_recovery
 from logger import get_logger
@@ -21,6 +23,10 @@ from weekly_report import format_weekly_report
 
 TELEGRAM_API_URL = "https://api.telegram.org/bot{token}/{method}"
 MAX_TELEGRAM_MESSAGE_LENGTH = 4000
+ENTRY_FIELDS = ["sleep_hours", "hrv_status", "body_battery", "resting_hr", "stress"]
+OPTIONAL_ENTRY_FIELDS = {"stress"}
+VALID_HRV_STATUSES = {"balanced", "low", "poor", "unbalanced"}
+ENTRY_SESSIONS = {}
 logger = get_logger(__name__)
 
 
@@ -104,18 +110,179 @@ def help_text():
         "/start - Start the bot\n"
         "/help - Show available commands\n"
         "/today - Generate today's Garmin-first recovery recommendation\n"
-        "/weekly - Generate the weekly adaptive training plan"
+        "/weekly - Generate the weekly adaptive training plan\n"
+        "/entry - Enter today's Garmin health data\n"
+        "/cancel - Cancel the current entry flow"
     )
 
 
-def handle_command(text):
+def _entry_prompt(field):
+    prompts = {
+        "sleep_hours": "Enter sleep_hours (0-24, decimal allowed):",
+        "hrv_status": "Enter hrv_status (balanced, low, poor, unbalanced):",
+        "body_battery": "Enter body_battery (0-100):",
+        "resting_hr": "Enter resting_hr (20-120):",
+        "stress": "Enter stress (optional, send '-' to skip):",
+    }
+    return prompts[field]
+
+
+def _validate_float(value, min_value, max_value, label):
+    try:
+        parsed_value = float(value)
+    except (TypeError, ValueError):
+        return None, f"{label} must be a number from {min_value} to {max_value}."
+
+    if parsed_value < min_value or parsed_value > max_value:
+        return None, f"{label} must be a number from {min_value} to {max_value}."
+
+    return str(parsed_value), None
+
+
+def _validate_int(value, min_value, max_value, label):
+    try:
+        parsed_value = int(value)
+    except (TypeError, ValueError):
+        return None, f"{label} must be a whole number from {min_value} to {max_value}."
+
+    if str(value).strip() != str(parsed_value):
+        return None, f"{label} must be a whole number from {min_value} to {max_value}."
+
+    if parsed_value < min_value or parsed_value > max_value:
+        return None, f"{label} must be a whole number from {min_value} to {max_value}."
+
+    return str(parsed_value), None
+
+
+def validate_entry_field(field, value):
+    value = str(value or "").strip()
+
+    if field in OPTIONAL_ENTRY_FIELDS and value in {"", "-"}:
+        return "", None
+
+    if not value:
+        return None, f"{field} is required."
+
+    if field == "sleep_hours":
+        return _validate_float(value, 0, 24, field)
+
+    if field == "hrv_status":
+        normalized_value = value.lower()
+        if normalized_value not in VALID_HRV_STATUSES:
+            allowed_values = ", ".join(sorted(VALID_HRV_STATUSES))
+            return None, f"hrv_status must be one of {allowed_values}."
+        return normalized_value, None
+
+    if field == "body_battery":
+        return _validate_int(value, 0, 100, field)
+
+    if field == "resting_hr":
+        return _validate_int(value, 20, 120, field)
+
+    if field == "stress":
+        return _validate_int(value, 0, 100, field)
+
+    return None, f"Unknown field: {field}"
+
+
+def _read_garmin_csv_rows(path):
+    if not path.exists():
+        return [], ["date", "sleep_hours", "hrv_status", "body_battery", "resting_hr"]
+
+    import csv
+
+    with path.open(newline="", encoding="utf-8") as csv_file:
+        reader = csv.DictReader(csv_file)
+        return list(reader), list(reader.fieldnames or [])
+
+
+def save_telegram_entry(entry, csv_path=GARMIN_HEALTH_CSV_PATH):
+    import csv
+
+    rows, fieldnames = _read_garmin_csv_rows(csv_path)
+    for field in ["date", "sleep_hours", "hrv_status", "body_battery", "resting_hr"]:
+        if field not in fieldnames:
+            fieldnames.append(field)
+
+    if entry.get("stress") not in (None, "") and "stress" not in fieldnames:
+        fieldnames.append("stress")
+
+    existing_index = next(
+        (index for index, row in enumerate(rows) if row.get("date") == entry["date"]),
+        None,
+    )
+
+    if existing_index is None:
+        rows.append(entry)
+    else:
+        rows[existing_index].update(entry)
+
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with csv_path.open("w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _start_entry_flow(chat_id):
+    today = date.today().isoformat()
+    ENTRY_SESSIONS[chat_id] = {
+        "date": today,
+        "field_index": 0,
+        "entry": {"date": today},
+    }
+    return (
+        f"Starting Garmin entry for {today}.\n"
+        "Send /cancel anytime to stop.\n\n"
+        f"{_entry_prompt(ENTRY_FIELDS[0])}"
+    )
+
+
+def _complete_entry_flow(chat_id, session):
+    entry = session["entry"]
+    save_telegram_entry(entry)
+    ENTRY_SESSIONS.pop(chat_id, None)
+
+    try:
+        recommendation = build_recommendation_context()["daily_report"]
+        return (
+            "Garmin health entry saved.\n\n"
+            "Today's recommendation:\n\n"
+            f"{recommendation}"
+        )
+    except Exception as error:
+        logger.exception("Failed to generate recommendation after Telegram entry")
+        return f"Garmin health entry saved, but recommendation failed: {error}"
+
+
+def _handle_entry_response(chat_id, text):
+    session = ENTRY_SESSIONS.get(chat_id)
+    field = ENTRY_FIELDS[session["field_index"]]
+    parsed_value, error = validate_entry_field(field, text)
+
+    if error:
+        return f"{error}\n\n{_entry_prompt(field)}"
+
+    if parsed_value != "":
+        session["entry"][field] = parsed_value
+
+    session["field_index"] += 1
+    if session["field_index"] >= len(ENTRY_FIELDS):
+        return _complete_entry_flow(chat_id, session)
+
+    next_field = ENTRY_FIELDS[session["field_index"]]
+    return _entry_prompt(next_field)
+
+
+def handle_command(text, chat_id=None):
     command = (text or "").strip().split()[0].lower()
 
     if command == "/start":
         return (
             "Welcome to stramin.\n\n"
             "Garmin CSV is the primary health data source. "
-            "Use /today for today's recommendation or /weekly for the weekly plan."
+            "Use /entry to add today's metrics, /today for today's recommendation, "
+            "or /weekly for the weekly plan."
         )
 
     if command == "/help":
@@ -135,7 +302,33 @@ def handle_command(text):
             logger.exception("Failed to generate /weekly report")
             return f"Could not generate weekly plan: {error}"
 
+    if command == "/entry":
+        if chat_id is None:
+            return "Entry flow requires a Telegram chat."
+        return _start_entry_flow(chat_id)
+
+    if command == "/cancel":
+        if chat_id is not None and chat_id in ENTRY_SESSIONS:
+            ENTRY_SESSIONS.pop(chat_id, None)
+            return "Entry canceled."
+        return "No active entry flow to cancel."
+
     return "Unknown command. Use /help to see available commands."
+
+
+def handle_message(chat_id, text):
+    text = text or ""
+
+    if text.strip().lower() == "/cancel":
+        return handle_command(text, chat_id=chat_id)
+
+    if chat_id in ENTRY_SESSIONS and not text.startswith("/"):
+        return _handle_entry_response(chat_id, text)
+
+    if text.startswith("/"):
+        return handle_command(text, chat_id=chat_id)
+
+    return "Send /help to see available commands."
 
 
 def _telegram_url(token, method):
@@ -187,10 +380,10 @@ def run_bot():
                 chat_id = chat.get("id")
                 text = message.get("text", "")
 
-                if not chat_id or not text.startswith("/"):
+                if not chat_id or not text:
                     continue
 
-                send_message(token, chat_id, handle_command(text))
+                send_message(token, chat_id, handle_message(chat_id, text))
         except requests.RequestException as error:
             logger.warning("Telegram API unavailable: %s", error)
             time.sleep(5)
