@@ -35,11 +35,13 @@ def format_daily_report(
     gpt_analysis=None,
     trend_analysis=None,
     training_decision=None,
+    baseline=None,
 ):
     recovery_level = recovery_result.get("recovery_level")
     recommendation = gpt_analysis or _fallback_recommendation(recovery_level)
     trend_section = _format_trend_analysis(trend_analysis)
     decision_section = _format_training_decision(training_decision)
+    baseline_section = _format_baseline(baseline)
 
     return (
         "Daily Recovery Report\n"
@@ -54,6 +56,9 @@ def format_daily_report(
         f"Body Battery：{garmin_health.get('body_battery')}\n"
         f"靜息心率：{garmin_health.get('resting_hr')}\n"
         f"{_format_optional_stress(garmin_health)}\n"
+        "Baseline\n"
+        "--------------\n"
+        f"{baseline_section}\n\n"
         "最近 7 天趨勢\n"
         "--------------\n"
         f"{trend_section}\n\n"
@@ -89,4 +94,16 @@ def _format_training_decision(training_decision):
         f"Intensity：{training_decision.get('intensity')}\n"
         f"Suggested Activity：{training_decision.get('suggested_activity')}\n"
         f"Reason：{training_decision.get('reason')}"
+    )
+
+
+def _format_baseline(baseline):
+    if not baseline:
+        return "無 baseline 資料"
+
+    return (
+        f"Baseline Status：{baseline.get('baseline_status')}\n"
+        f"Average Sleep Hours：{baseline.get('average_sleep_hours')}\n"
+        f"Average Body Battery：{baseline.get('average_body_battery')}\n"
+        f"Average Resting HR：{baseline.get('average_resting_hr')}"
     )
