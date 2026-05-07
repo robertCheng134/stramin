@@ -16,5 +16,16 @@
   "priority_muscle_groups": ["chest", "back", "legs"],
   "preferred_training_time": "evening",
   "rest_days": ["Sunday"],
-  "session_duration_minutes": 60
+  "session_duration_minutes": 60,
+  "planned_workouts": {
+    "Monday": {
+      "activity": "weight_training",
+      "focus": "legs",
+      "intensity": "high"
+    },
+    "Tuesday": {
+      "activity": "cycling",
+      "intensity": "moderate"
+    }
+  }
 }

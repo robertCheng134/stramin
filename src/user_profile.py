@@ -21,6 +21,17 @@ DEFAULT_USER_PROFILE = {
     "preferred_training_time": "evening",
     "rest_days": ["Sunday"],
     "session_duration_minutes": 60,
+    "planned_workouts": {
+        "Monday": {
+            "activity": "weight_training",
+            "focus": "legs",
+            "intensity": "high",
+        },
+        "Tuesday": {
+            "activity": "cycling",
+            "intensity": "moderate",
+        },
+    },
 }
 
 DEFAULT_PROFILE_PATH = (
@@ -47,6 +58,7 @@ def load_user_profile(profile_path=DEFAULT_PROFILE_PATH):
     )
     profile["rest_days"] = list(profile.get("rest_days") or [])
     profile["weekly_structure"] = dict(profile.get("weekly_structure") or {})
+    profile["planned_workouts"] = dict(profile.get("planned_workouts") or {})
     profile["training_goal"] = profile.get("training_goal") or "general_fitness"
     profile["preferred_training_time"] = (
         profile.get("preferred_training_time") or "evening"

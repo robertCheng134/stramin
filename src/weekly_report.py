@@ -9,10 +9,17 @@ def format_weekly_report(weekly_plan):
         lines.extend(
             [
                 str(plan_item.get("day")),
-                f"- planned_activity: {plan_item.get('planned_activity')}",
-                f"- adjusted_activity: {plan_item.get('adjusted_activity')}",
-                f"- intensity: {plan_item.get('intensity')}",
-                f"- reason: {plan_item.get('reason')}",
+                (
+                    "Planned: "
+                    f"{plan_item.get('planned_activity')} "
+                    f"({plan_item.get('original_intensity')})"
+                ),
+                (
+                    "Adjusted: "
+                    f"{plan_item.get('adjusted_activity')} "
+                    f"({plan_item.get('adjusted_intensity')})"
+                ),
+                f"Reason: {plan_item.get('adaptation_reason')}",
                 "",
             ]
         )
