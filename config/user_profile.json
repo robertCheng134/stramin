@@ -1,5 +1,7 @@
 {
   "preferred_activities": ["weight_training", "walking", "cycling"],
   "disliked_activities": ["hiit"],
-  "training_goal": "general_fitness"
+  "training_goal": "general_fitness",
+  "available_days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+  "max_training_days_per_week": 4
 }

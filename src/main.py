@@ -11,6 +11,8 @@ from recovery_rules import calculate_recovery
 from strava import fetch_latest_activity
 from trend_analysis import analyze_recent_trends
 from user_profile import load_user_profile
+from weekly_planner import generate_weekly_plan
+from weekly_report import format_weekly_report
 
 
 def fetch_strava_activity_if_available():
@@ -39,6 +41,11 @@ def main():
         strava_activity=strava_activity,
         user_profile=user_profile,
     )
+    weekly_plan = generate_weekly_plan(
+        recovery_result=recovery,
+        trend_result=trends,
+        user_profile=user_profile,
+    )
     analysis = None
 
     print("Garmin data source:")
@@ -48,13 +55,17 @@ def main():
         print(f"notice: {garmin_source.get('message')}")
 
     if os.getenv("OPENAI_API_KEY"):
-        analysis = analyze_recovery(
-            garmin_health=garmin_health,
-            recovery_result=recovery,
-            strava_activity=strava_activity,
-        )
+        try:
+            analysis = analyze_recovery(
+                garmin_health=garmin_health,
+                recovery_result=recovery,
+                strava_activity=strava_activity,
+            )
+        except Exception as error:
+            print(f"GPT skipped: {error}")
+            analysis = None
     else:
-        print("\nGPT skipped: Missing OPENAI_API_KEY environment variable.")
+        print("GPT skipped: Missing OPENAI_API_KEY environment variable.")
 
     report = format_daily_report(
         garmin_health=garmin_health,
@@ -65,6 +76,7 @@ def main():
         training_decision=decision,
     )
     print(f"\n{report}")
+    print(f"\n{format_weekly_report(weekly_plan)}")
 
 
 if __name__ == "__main__":
