@@ -35,11 +35,13 @@ def format_daily_report(
     gpt_analysis=None,
     trend_analysis=None,
     training_decision=None,
+    training_load=None,
 ):
     recovery_level = recovery_result.get("recovery_level")
     recommendation = gpt_analysis or _fallback_recommendation(recovery_level)
     trend_section = _format_trend_analysis(trend_analysis)
     decision_section = _format_training_decision(training_decision)
+    training_load_section = _format_training_load(training_load)
 
     return (
         "Daily Recovery Report\n"
@@ -60,6 +62,9 @@ def format_daily_report(
         "今日訓練決策\n"
         "--------------\n"
         f"{decision_section}\n\n"
+        "Training Load\n"
+        "--------------\n"
+        f"{training_load_section}\n\n"
         "Strava 補充活動\n"
         "--------------\n"
         f"{_format_strava_activity(strava_activity)}\n\n"
@@ -89,4 +94,17 @@ def _format_training_decision(training_decision):
         f"Intensity：{training_decision.get('intensity')}\n"
         f"Suggested Activity：{training_decision.get('suggested_activity')}\n"
         f"Reason：{training_decision.get('reason')}"
+    )
+
+
+def _format_training_load(training_load):
+    if not training_load:
+        return "無 Strava training load 資料"
+
+    return (
+        f"Last 7 Days Total Minutes：{training_load.get('last_7_days_total_minutes')}\n"
+        f"Last 3 Days Total Minutes：{training_load.get('last_3_days_total_minutes')}\n"
+        f"Activity Count 7 Days：{training_load.get('activity_count_7_days')}\n"
+        f"Training Load Level：{training_load.get('training_load_level')}\n"
+        f"Overreaching Risk：{training_load.get('overreaching_risk')}"
     )

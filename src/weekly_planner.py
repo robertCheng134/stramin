@@ -23,7 +23,11 @@ def _select_activity(user_profile, candidates):
     return "rest"
 
 
-def _training_capacity(recovery_level, fatigue_trend, max_training_days):
+def _training_capacity(recovery_level, fatigue_trend, max_training_days, training_load):
+    if (training_load or {}).get("overreaching_risk"):
+        return min(max_training_days, 2)
+    if (training_load or {}).get("training_load_level") == "high":
+        return min(max_training_days, 3)
     if recovery_level == "poor":
         return min(max_training_days, 2)
     if fatigue_trend == "worsening":
@@ -33,7 +37,11 @@ def _training_capacity(recovery_level, fatigue_trend, max_training_days):
     return min(max_training_days, 4)
 
 
-def _intensity_for(recovery_level, fatigue_trend):
+def _intensity_for(recovery_level, fatigue_trend, training_load):
+    if (training_load or {}).get("overreaching_risk"):
+        return "very low"
+    if (training_load or {}).get("training_load_level") == "high":
+        return "low"
     if recovery_level == "poor":
         return "very low"
     if fatigue_trend == "worsening":
@@ -43,7 +51,11 @@ def _intensity_for(recovery_level, fatigue_trend):
     return "low to moderate"
 
 
-def _reason_for(recovery_level, fatigue_trend, training_goal):
+def _reason_for(recovery_level, fatigue_trend, training_goal, training_load):
+    if (training_load or {}).get("overreaching_risk"):
+        return "Recent 3-day training load is high, so the week prioritizes recovery."
+    if (training_load or {}).get("training_load_level") == "high":
+        return "Recent 7-day training load is high, so weekly intensity is reduced."
     if recovery_level == "poor":
         return "Recovery is poor, so the week prioritizes rest and gentle movement."
     if fatigue_trend == "worsening":
@@ -53,7 +65,7 @@ def _reason_for(recovery_level, fatigue_trend, training_goal):
     return f"Recovery is moderate, so training supports {training_goal} conservatively."
 
 
-def generate_weekly_plan(recovery_result, trend_result, user_profile):
+def generate_weekly_plan(recovery_result, trend_result, user_profile, training_load=None):
     recovery_level = recovery_result.get("recovery_level")
     fatigue_trend = (trend_result or {}).get("fatigue_trend", "stable")
     available_days = set(user_profile.get("available_days") or DAYS)
@@ -61,7 +73,9 @@ def generate_weekly_plan(recovery_result, trend_result, user_profile):
     max_training_days = int(user_profile.get("max_training_days_per_week") or 4)
     candidate_activities = (
         RECOVERY_ACTIVITIES
-        if recovery_level == "poor" or fatigue_trend == "worsening"
+        if recovery_level == "poor"
+        or fatigue_trend == "worsening"
+        or (training_load or {}).get("training_load_level") == "high"
         else TRAINING_ACTIVITIES
     )
 
@@ -69,11 +83,12 @@ def generate_weekly_plan(recovery_result, trend_result, user_profile):
         recovery_level,
         fatigue_trend,
         max_training_days,
+        training_load,
     )
     training_days_used = 0
     activity = _select_activity(user_profile, candidate_activities)
-    intensity = _intensity_for(recovery_level, fatigue_trend)
-    reason = _reason_for(recovery_level, fatigue_trend, training_goal)
+    intensity = _intensity_for(recovery_level, fatigue_trend, training_load)
+    reason = _reason_for(recovery_level, fatigue_trend, training_goal, training_load)
 
     weekly_plan = []
     for day in DAYS:

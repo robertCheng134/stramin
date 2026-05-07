@@ -8,6 +8,14 @@ STRAVA_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
 
 
 def fetch_latest_activity():
+    activities = fetch_recent_activities(per_page=1)
+    if not activities:
+        raise RuntimeError("No Strava activities found.")
+
+    return activities[0]
+
+
+def fetch_recent_activities(per_page=10):
     load_dotenv()
 
     access_token = os.getenv("STRAVA_ACCESS_TOKEN")
@@ -17,16 +25,12 @@ def fetch_latest_activity():
     response = requests.get(
         STRAVA_ACTIVITIES_URL,
         headers={"Authorization": f"Bearer {access_token}"},
-        params={"per_page": 1},
+        params={"per_page": per_page},
         timeout=30,
     )
     response.raise_for_status()
 
-    activities = response.json()
-    if not activities:
-        raise RuntimeError("No Strava activities found.")
-
-    return activities[0]
+    return response.json()
 
 
 def main():
