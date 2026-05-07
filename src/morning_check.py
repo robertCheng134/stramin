@@ -8,9 +8,13 @@ from daily_report import format_daily_report
 from decision_engine import make_training_decision
 from garmin_health import GARMIN_HEALTH_CSV_PATH, load_latest_garmin_health
 from gpt_analysis import analyze_recovery
+from logger import get_logger
 from recovery_rules import calculate_recovery
 from trend_analysis import analyze_recent_trends
 from user_profile import load_user_profile
+
+
+logger = get_logger(__name__)
 
 
 def main():
@@ -44,9 +48,9 @@ def main():
                 strava_activity=None,
             )
         except Exception as error:
-            print(f"GPT skipped: {error}")
+            logger.warning("GPT skipped: %s", error)
     else:
-        print("GPT skipped: Missing OPENAI_API_KEY environment variable.")
+        logger.warning("GPT skipped: Missing OPENAI_API_KEY environment variable.")
 
     report = format_daily_report(
         garmin_health=garmin_health,
