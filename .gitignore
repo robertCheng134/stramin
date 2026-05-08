@@ -3,3 +3,4 @@
 __pycache__/
 *.pyc
 data/garmin_health.csv
+garmindb.log
