@@ -89,6 +89,7 @@ def print_preview(preview):
     print(f"source_date={metadata.get('source_date', health_data.date)}")
     print(f"sleep_hours={health_data.sleep_hours}")
     print(f"hrv_value={hrv_metric.get('hrv_value', '')}")
+    print(f"hrv_5min_high={hrv_metric.get('hrv_5min_high', '')}")
     print(f"hrv_balance={hrv_metric.get('hrv_balance', '')}")
     print(f"hrv_risk={hrv_metric.get('hrv_risk', '')}")
     print(f"resting_hr={health_data.resting_hr}")

@@ -54,6 +54,7 @@ def _print_hrv_details(metadata):
     for field in [
         "hrv_value",
         "hrv_unit",
+        "hrv_5min_high",
         "garmin_hrv_status",
         "hrv_balance",
         "hrv_risk",
@@ -96,6 +97,9 @@ def _print_debug(metadata, db_path):
             for field in [
                 "hrv_value",
                 "hrv_unit",
+                "hrv_value_semantic_source",
+                "hrv_5min_high",
+                "hrv_5min_high_semantic_source",
                 "garmin_hrv_status",
                 "hrv_lower_bound",
                 "hrv_upper_bound",

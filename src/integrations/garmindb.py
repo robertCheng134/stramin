@@ -391,7 +391,7 @@ def _monitoring_hrv_to_status(row):
     if isinstance(raw_status, str) and raw_status.lower() in VALID_HRV_STATUSES:
         return raw_status.lower()
 
-    last_night_average = row.get("last_night_average") or row.get("last_night")
+    last_night_average = row.get("last_night") or row.get("last_night_average")
     baseline_low = row.get("baseline_low")
     baseline_high = row.get("baseline_high")
     try:
@@ -455,6 +455,7 @@ def _hrv_balance(hrv_value, lower_bound, upper_bound):
 
 def _hrv_context(
     hrv_value,
+    hrv_5min_high="",
     lower_bound=None,
     upper_bound=None,
     garmin_hrv_status="",
@@ -463,6 +464,9 @@ def _hrv_context(
     return {
         "hrv_value": "" if hrv_value in (None, "") else str(hrv_value),
         "hrv_unit": "ms",
+        "hrv_value_semantic_source": "nightly_hrv_average",
+        "hrv_5min_high": "" if hrv_5min_high in (None, "") else str(hrv_5min_high),
+        "hrv_5min_high_semantic_source": "nightly_hrv_5min_high",
         "garmin_hrv_status": "" if garmin_hrv_status in (None, "") else str(garmin_hrv_status),
         "hrv_lower_bound": "" if lower_bound in (None, "") else str(lower_bound),
         "hrv_upper_bound": "" if upper_bound in (None, "") else str(upper_bound),
@@ -507,10 +511,10 @@ def _load_latest_monitoring_health_data_with_metadata(
             hrv_params,
         )
         if hrv_row:
-            value_column = "last_night_average"
+            value_column = "last_night"
             hrv_value = hrv_row.get(value_column)
             if hrv_value in (None, ""):
-                value_column = "last_night"
+                value_column = "last_night_average"
                 hrv_value = hrv_row.get(value_column)
             raw_column = value_column
             raw_value = hrv_value
@@ -521,6 +525,7 @@ def _load_latest_monitoring_health_data_with_metadata(
             hrv_status = _monitoring_hrv_to_status(hrv_row)
             hrv_context = _hrv_context(
                 hrv_value=hrv_value,
+                hrv_5min_high=hrv_row.get("last_night_average"),
                 lower_bound=hrv_row.get("baseline_low"),
                 upper_bound=hrv_row.get("baseline_high"),
                 garmin_hrv_status=hrv_row.get("status"),
@@ -534,18 +539,18 @@ def _load_latest_monitoring_health_data_with_metadata(
                 timestamp=hrv_row.get("timestamp") or "",
                 raw_value=raw_value if raw_value is not None else "",
                 reason="" if hrv_status else "no recent rows",
-                semantic_source="nightly_hrv",
-                source_priority="primary",
+                semantic_source="nightly_hrv_average",
+                source_priority="fallback",
                 **hrv_context,
             )
         else:
             metrics["hrv_status"] = _metric_metadata(
                 db_file=db_file,
                 table="monitoring_hrv_status",
-                column="last_night_average",
+                column="last_night",
                 reason="no recent rows",
-                semantic_source="nightly_hrv",
-                source_priority="primary",
+                semantic_source="nightly_hrv_average",
+                source_priority="fallback",
             )
 
     hr_row = None
@@ -800,6 +805,7 @@ def _latest_hrv_metric_from_garmin(connection, db_file, start_date=None):
 
     status_column = "status" if "status" in columns else None
     value_column = "last_night_avg" if "last_night_avg" in columns else None
+    high_column = "last_night_5min_high" if "last_night_5min_high" in columns else None
     lower_column = "baseline_low" if "baseline_low" in columns else None
     upper_column = "baseline_upper" if "baseline_upper" in columns else None
     if not status_column and not value_column:
@@ -810,6 +816,8 @@ def _latest_hrv_metric_from_garmin(connection, db_file, start_date=None):
         selected_columns.append(status_column)
     if value_column:
         selected_columns.append(value_column)
+    if high_column:
+        selected_columns.append(high_column)
     if lower_column:
         selected_columns.append(lower_column)
     if upper_column:
@@ -827,8 +835,9 @@ def _latest_hrv_metric_from_garmin(connection, db_file, start_date=None):
     raw_column = status_column or value_column
     raw_value = row.get(raw_column)
     hrv_status = ""
-    if status_column and str(row.get(status_column) or "").lower() in VALID_HRV_STATUSES:
-        hrv_status = str(row.get(status_column)).lower()
+    normalized_status = str(row.get(status_column) or "").lower()
+    if status_column and normalized_status in VALID_HRV_STATUSES:
+        hrv_status = normalized_status
     elif value_column and row.get(value_column) not in (None, ""):
         hrv_status = _normalize_hrv_status(row.get(value_column), "value")
         raw_column = value_column
@@ -836,6 +845,7 @@ def _latest_hrv_metric_from_garmin(connection, db_file, start_date=None):
 
     hrv_context = _hrv_context(
         hrv_value=row.get(value_column) if value_column else "",
+        hrv_5min_high=row.get(high_column) if high_column else "",
         lower_bound=row.get(lower_column) if lower_column else "",
         upper_bound=row.get(upper_column) if upper_column else "",
         garmin_hrv_status=row.get(status_column) if status_column else "",
@@ -849,8 +859,8 @@ def _latest_hrv_metric_from_garmin(connection, db_file, start_date=None):
         timestamp=row.get("day") or "",
         raw_value=raw_value if raw_value is not None else "",
         reason="" if hrv_status else "no recent rows",
-        semantic_source="nightly_hrv",
-        source_priority="fallback",
+        semantic_source="nightly_hrv_average",
+        source_priority="primary",
         **hrv_context,
     )
 
@@ -957,11 +967,11 @@ def load_latest_health_data_from_directory(db_dir=None, user_profile=None):
     )
 
     metrics = _empty_metrics()
-    metrics["hrv_status"] = monitoring_metrics["hrv_status"]
-    if not metrics["hrv_status"].get("value") and garmin_metrics["hrv_status"].get(
-        "value"
-    ):
-        metrics["hrv_status"] = garmin_metrics["hrv_status"]
+    metrics["hrv_status"] = garmin_metrics["hrv_status"]
+    if not metrics["hrv_status"].get("hrv_value") and monitoring_metrics[
+        "hrv_status"
+    ].get("hrv_value"):
+        metrics["hrv_status"] = monitoring_metrics["hrv_status"]
 
     metrics["resting_hr"] = garmin_metrics["resting_hr"]
     if not metrics["resting_hr"].get("value") and monitoring_metrics[

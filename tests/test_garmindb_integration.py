@@ -294,10 +294,13 @@ def test_garmindb_latest_health_data_reads_monitoring_schema(tmp_path):
     assert metadata["source_date"] == "2026-05-07"
     assert metadata["metrics"]["hrv_status"]["date"] == "2026-05-07"
     assert metadata["metrics"]["hrv_status"]["table"] == "monitoring_hrv_status"
-    assert metadata["metrics"]["hrv_status"]["column"] == "last_night_average"
-    assert metadata["metrics"]["hrv_status"]["semantic_source"] == "nightly_hrv"
-    assert metadata["metrics"]["hrv_status"]["source_priority"] == "primary"
+    assert metadata["metrics"]["hrv_status"]["column"] == "last_night"
+    assert metadata["metrics"]["hrv_status"]["semantic_source"] == "nightly_hrv_average"
+    assert metadata["metrics"]["hrv_status"]["source_priority"] == "fallback"
     assert metadata["metrics"]["hrv_status"]["hrv_value"] == "37.0"
+    assert metadata["metrics"]["hrv_status"]["hrv_value_semantic_source"] == "nightly_hrv_average"
+    assert metadata["metrics"]["hrv_status"]["hrv_5min_high"] == "37.0"
+    assert metadata["metrics"]["hrv_status"]["hrv_5min_high_semantic_source"] == "nightly_hrv_5min_high"
     assert metadata["metrics"]["hrv_status"]["hrv_unit"] == "ms"
     assert metadata["metrics"]["hrv_status"]["garmin_hrv_status"] == "3"
     assert metadata["metrics"]["hrv_status"]["hrv_lower_bound"] == "35.0"
@@ -405,6 +408,7 @@ def _create_garmin_db(path):
             CREATE TABLE hrv (
                 day DATETIME NOT NULL PRIMARY KEY,
                 last_night_avg INTEGER,
+                last_night_5min_high INTEGER,
                 baseline_low INTEGER,
                 baseline_upper INTEGER,
                 status VARCHAR
@@ -428,13 +432,14 @@ def _create_garmin_db(path):
             INSERT INTO hrv (
                 day,
                 last_night_avg,
+                last_night_5min_high,
                 baseline_low,
                 baseline_upper,
                 status
             )
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            ("2026-05-07 00:00:00", 31, 35, 39, "low"),
+            ("2026-05-07 00:00:00", 31, 55, 35, 39, "low"),
         )
 
 
@@ -500,17 +505,15 @@ def test_garmindb_latest_directory_combines_monitoring_and_garmin_db(tmp_path):
 
     assert health_data.date == "2026-05-07"
     assert health_data.sleep_hours == "7.5"
-    assert health_data.hrv_status == "unbalanced"
+    assert health_data.hrv_status == "low"
     assert health_data.resting_hr == "62"
     assert health_data.stress == "42"
     assert metadata["schema"] == "directory"
     assert metadata["metrics"]["sleep_hours"]["db_file"].endswith("garmin.db")
     assert metadata["metrics"]["sleep_hours"]["semantic_source"] == "sleep_summary"
     assert metadata["metrics"]["sleep_hours"]["source_priority"] == "primary"
-    assert metadata["metrics"]["hrv_status"]["db_file"].endswith(
-        "garmin_monitoring.db"
-    )
-    assert metadata["metrics"]["hrv_status"]["semantic_source"] == "nightly_hrv"
+    assert metadata["metrics"]["hrv_status"]["db_file"].endswith("garmin.db")
+    assert metadata["metrics"]["hrv_status"]["semantic_source"] == "nightly_hrv_average"
     assert metadata["metrics"]["hrv_status"]["source_priority"] == "primary"
     assert metadata["metrics"]["resting_hr"]["table"] == "resting_hr"
     assert (
@@ -518,13 +521,14 @@ def test_garmindb_latest_directory_combines_monitoring_and_garmin_db(tmp_path):
     )
     assert metadata["metrics"]["resting_hr"]["source_priority"] == "primary"
     assert metadata["metrics"]["body_battery"]["reason"] == "table not found"
-    assert metadata["metrics"]["hrv_status"]["hrv_value"] == "48.0"
-    assert metadata["metrics"]["hrv_status"]["hrv_balance"] == "above_baseline"
+    assert metadata["metrics"]["hrv_status"]["hrv_value"] == "31"
+    assert metadata["metrics"]["hrv_status"]["hrv_5min_high"] == "55"
+    assert metadata["metrics"]["hrv_status"]["hrv_balance"] == "below_baseline"
     assert (
         metadata["metrics"]["hrv_status"]["hrv_risk"]
-        == "possible_parasympathetic_rebound"
+        == "possible_under_recovery"
     )
-    assert "above your baseline" in metadata["metrics"]["hrv_status"]["hrv_message"]
+    assert "below your baseline" in metadata["metrics"]["hrv_status"]["hrv_message"]
 
 
 def test_garmindb_latest_directory_falls_back_to_garmin_resting_hr(tmp_path):

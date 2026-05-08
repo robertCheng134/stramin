@@ -73,6 +73,7 @@ def test_today_command_prefers_garmindb_recommendation(monkeypatch):
                 "metrics": {
                     "hrv_status": {
                         "hrv_value": "37",
+                        "hrv_5min_high": "52",
                         "hrv_balance": "within_baseline",
                         "hrv_risk": "stable",
                     }
@@ -110,6 +111,7 @@ def test_today_command_prefers_garmindb_recommendation(monkeypatch):
     assert "source_date=2026-05-07" in response
     assert "sleep_hours=7.5" in response
     assert "hrv_value=37" in response
+    assert "hrv_5min_high=52" in response
     assert "hrv_balance=within_baseline" in response
     assert "hrv_risk=stable" in response
     assert "resting_hr=62" in response

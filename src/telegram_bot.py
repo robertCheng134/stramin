@@ -95,6 +95,7 @@ def format_garmindb_today_response(preview):
         f"source_date={metadata.get('source_date', health_data.date)}\n"
         f"sleep_hours={health_data.sleep_hours}\n"
         f"hrv_value={hrv_metric.get('hrv_value', '')}\n"
+        f"hrv_5min_high={hrv_metric.get('hrv_5min_high', '')}\n"
         f"hrv_balance={hrv_metric.get('hrv_balance', '')}\n"
         f"hrv_risk={hrv_metric.get('hrv_risk', '')}\n"
         f"resting_hr={health_data.resting_hr}\n"

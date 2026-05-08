@@ -48,6 +48,7 @@ def _create_garmin_db(path):
             CREATE TABLE hrv (
                 day DATETIME NOT NULL PRIMARY KEY,
                 last_night_avg INTEGER,
+                last_night_5min_high INTEGER,
                 baseline_low INTEGER,
                 baseline_upper INTEGER,
                 status VARCHAR
@@ -71,13 +72,14 @@ def _create_garmin_db(path):
             INSERT INTO hrv (
                 day,
                 last_night_avg,
+                last_night_5min_high,
                 baseline_low,
                 baseline_upper,
                 status
             )
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            ("2026-05-07 00:00:00", 37, 35, 39, "balanced"),
+            ("2026-05-07 00:00:00", 37, 52, 35, 39, "balanced"),
         )
 
 
@@ -92,6 +94,7 @@ def test_build_recommendation_preview_uses_garmindb_health_data(tmp_path):
     assert preview["health_data"].sleep_hours == "7.5"
     assert preview["health_data"].stress == "42"
     assert preview["metadata"]["metrics"]["hrv_status"]["hrv_value"] == "37"
+    assert preview["metadata"]["metrics"]["hrv_status"]["hrv_5min_high"] == "52"
     assert preview["metadata"]["metrics"]["hrv_status"]["hrv_balance"] == "within_baseline"
     assert preview["metadata"]["metrics"]["hrv_status"]["hrv_risk"] == "stable"
     assert preview["decision"]["decision"] in {
@@ -115,6 +118,7 @@ def test_print_preview_outputs_required_fields(tmp_path, capsys):
     assert "source_date=2026-05-07" in output
     assert "sleep_hours=7.5" in output
     assert "hrv_value=37" in output
+    assert "hrv_5min_high=52" in output
     assert "hrv_balance=within_baseline" in output
     assert "hrv_risk=stable" in output
     assert "resting_hr=62" in output
