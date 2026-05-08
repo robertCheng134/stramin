@@ -11,6 +11,7 @@ from integrations.garmindb import (
     GarminDBImportError,
     load_health_data,
     load_latest_health_data,
+    load_latest_health_data_with_metadata,
 )
 
 
@@ -77,6 +78,24 @@ def test_garmindb_latest_health_data_returns_latest_daily_summary(tmp_path):
     assert health_data.date == "2026-05-07"
     assert health_data.hrv_status == "low"
     assert health_data.resting_hr == "58"
+
+
+def test_garmindb_latest_health_data_metadata_for_daily_summary(tmp_path):
+    db_path = tmp_path / "garmin.db"
+    _create_daily_summary_db(
+        db_path,
+        [("2026-05-07", 420, "low", 60, 58, None)],
+    )
+
+    health_data, metadata = load_latest_health_data_with_metadata(db_path)
+
+    assert health_data.date == "2026-05-07"
+    assert metadata["source_date"] == "2026-05-07"
+    assert metadata["metrics"]["sleep_hours"]["date"] == "2026-05-07"
+    assert metadata["metrics"]["sleep_hours"]["table"] == "DailySummary"
+    assert metadata["metrics"]["sleep_hours"]["column"] == "sleep_minutes"
+    assert metadata["metrics"]["sleep_hours"]["raw_value"] == 420
+    assert metadata["metrics"]["stress"]["reason"] == "no recent rows"
 
 
 def test_garmindb_adapter_uses_env_path(tmp_path, monkeypatch):
@@ -270,6 +289,16 @@ def test_garmindb_latest_health_data_reads_monitoring_schema(tmp_path):
     assert health_data.hrv_status == "balanced"
     assert health_data.resting_hr == "52"
     assert health_data.body_battery_or_energy == ""
+
+    _health_data, metadata = load_latest_health_data_with_metadata(db_path)
+    assert metadata["source_date"] == "2026-05-07"
+    assert metadata["metrics"]["hrv_status"]["date"] == "2026-05-07"
+    assert metadata["metrics"]["hrv_status"]["table"] == "monitoring_hrv_status"
+    assert metadata["metrics"]["hrv_status"]["column"] == "last_night_average"
+    assert metadata["metrics"]["resting_hr"]["date"] == "2026-05-07"
+    assert metadata["metrics"]["resting_hr"]["column"] == "heart_rate"
+    assert metadata["metrics"]["sleep_hours"]["reason"] == "table not found"
+    assert metadata["metrics"]["body_battery"]["reason"] == "table not found"
 
 
 def test_garmindb_latest_health_data_uses_latest_available_hrv(tmp_path):
