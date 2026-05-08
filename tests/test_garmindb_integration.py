@@ -295,6 +295,17 @@ def test_garmindb_latest_health_data_reads_monitoring_schema(tmp_path):
     assert metadata["metrics"]["hrv_status"]["date"] == "2026-05-07"
     assert metadata["metrics"]["hrv_status"]["table"] == "monitoring_hrv_status"
     assert metadata["metrics"]["hrv_status"]["column"] == "last_night_average"
+    assert metadata["metrics"]["hrv_status"]["hrv_value"] == "37.0"
+    assert metadata["metrics"]["hrv_status"]["hrv_unit"] == "ms"
+    assert metadata["metrics"]["hrv_status"]["garmin_hrv_status"] == "3"
+    assert metadata["metrics"]["hrv_status"]["hrv_lower_bound"] == "35.0"
+    assert metadata["metrics"]["hrv_status"]["hrv_upper_bound"] == "39.0"
+    assert metadata["metrics"]["hrv_status"]["hrv_balance"] == "within_baseline"
+    assert metadata["metrics"]["hrv_status"]["hrv_risk"] == "stable"
+    assert (
+        metadata["metrics"]["hrv_status"]["hrv_message"]
+        == "HRV is within your normal baseline range."
+    )
     assert metadata["metrics"]["resting_hr"]["date"] == "2026-05-07"
     assert metadata["metrics"]["resting_hr"]["column"] == "heart_rate"
     assert metadata["metrics"]["sleep_hours"]["reason"] == "table not found"
@@ -387,6 +398,8 @@ def _create_garmin_db(path):
             CREATE TABLE hrv (
                 day DATETIME NOT NULL PRIMARY KEY,
                 last_night_avg INTEGER,
+                baseline_low INTEGER,
+                baseline_upper INTEGER,
                 status VARCHAR
             )
             """
@@ -404,8 +417,17 @@ def _create_garmin_db(path):
             ("2026-05-07 00:00:00", 62.0),
         )
         connection.execute(
-            "INSERT INTO hrv (day, last_night_avg, status) VALUES (?, ?, ?)",
-            ("2026-05-07 00:00:00", 31, "low"),
+            """
+            INSERT INTO hrv (
+                day,
+                last_night_avg,
+                baseline_low,
+                baseline_upper,
+                status
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            ("2026-05-07 00:00:00", 31, 35, 39, "low"),
         )
 
 
@@ -481,6 +503,13 @@ def test_garmindb_latest_directory_combines_monitoring_and_garmin_db(tmp_path):
     )
     assert metadata["metrics"]["resting_hr"]["table"] == "monitoring_hr"
     assert metadata["metrics"]["body_battery"]["reason"] == "table not found"
+    assert metadata["metrics"]["hrv_status"]["hrv_value"] == "48.0"
+    assert metadata["metrics"]["hrv_status"]["hrv_balance"] == "above_baseline"
+    assert (
+        metadata["metrics"]["hrv_status"]["hrv_risk"]
+        == "possible_parasympathetic_rebound"
+    )
+    assert "above your baseline" in metadata["metrics"]["hrv_status"]["hrv_message"]
 
 
 def test_garmindb_latest_directory_falls_back_to_garmin_resting_hr(tmp_path):
@@ -493,3 +522,35 @@ def test_garmindb_latest_directory_falls_back_to_garmin_resting_hr(tmp_path):
 
     assert health_data.resting_hr == "62"
     assert metadata["metrics"]["resting_hr"]["table"] == "resting_hr"
+
+
+def test_garmindb_hrv_direction_unknown_without_baseline(tmp_path):
+    db_dir = tmp_path / "DBs"
+    db_dir.mkdir()
+    db_path = db_dir / "garmin.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE hrv (
+                day DATETIME NOT NULL PRIMARY KEY,
+                last_night_avg INTEGER,
+                status VARCHAR
+            )
+            """
+        )
+        connection.execute(
+            "INSERT INTO hrv (day, last_night_avg, status) VALUES (?, ?, ?)",
+            ("2026-05-07 00:00:00", 31, "low"),
+        )
+
+    health_data, metadata = load_latest_health_data_with_metadata(db_dir=db_dir)
+
+    assert health_data.hrv_status == "low"
+    assert metadata["metrics"]["hrv_status"]["hrv_value"] == "31"
+    assert metadata["metrics"]["hrv_status"]["hrv_unit"] == "ms"
+    assert metadata["metrics"]["hrv_status"]["garmin_hrv_status"] == "low"
+    assert metadata["metrics"]["hrv_status"]["hrv_balance"] == "unknown"
+    assert metadata["metrics"]["hrv_status"]["hrv_risk"] == "unknown"
+    assert "baseline range is unavailable" in metadata["metrics"]["hrv_status"][
+        "hrv_message"
+    ]

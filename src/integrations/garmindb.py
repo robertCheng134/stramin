@@ -338,8 +338,9 @@ def _metric_metadata(
     timestamp="",
     raw_value="",
     reason="",
+    **extra,
 ):
-    return {
+    metadata = {
         "value": value,
         "date": date,
         "db_file": str(db_file) if db_file else "",
@@ -349,6 +350,8 @@ def _metric_metadata(
         "raw_value": raw_value,
         "reason": reason,
     }
+    metadata.update(extra)
+    return metadata
 
 
 def _date_from_timestamp(value):
@@ -403,6 +406,68 @@ def _monitoring_hrv_to_status(row):
     return "balanced"
 
 
+def _hrv_direction_message(hrv_balance):
+    messages = {
+        "below_baseline": (
+            "HRV is below your baseline. This may indicate stress, poor sleep, "
+            "illness, or accumulated fatigue."
+        ),
+        "above_baseline": (
+            "HRV is above your baseline. This may reflect parasympathetic rebound, "
+            "illness onset, or unusual recovery response."
+        ),
+        "within_baseline": "HRV is within your normal baseline range.",
+        "unknown": (
+            "HRV baseline range is unavailable, so directional risk cannot be determined."
+        ),
+    }
+    return messages[hrv_balance]
+
+
+def _hrv_risk(hrv_balance):
+    risks = {
+        "below_baseline": "possible_under_recovery",
+        "above_baseline": "possible_parasympathetic_rebound",
+        "within_baseline": "stable",
+        "unknown": "unknown",
+    }
+    return risks[hrv_balance]
+
+
+def _hrv_balance(hrv_value, lower_bound, upper_bound):
+    try:
+        value = float(hrv_value)
+        lower = float(lower_bound)
+        upper = float(upper_bound)
+    except (TypeError, ValueError):
+        return "unknown"
+
+    if value < lower:
+        return "below_baseline"
+    if value > upper:
+        return "above_baseline"
+    return "within_baseline"
+
+
+def _hrv_context(
+    hrv_value,
+    lower_bound=None,
+    upper_bound=None,
+    garmin_hrv_status="",
+):
+    balance = _hrv_balance(hrv_value, lower_bound, upper_bound)
+    return {
+        "hrv_value": "" if hrv_value in (None, "") else str(hrv_value),
+        "hrv_unit": "ms",
+        "garmin_hrv_status": "" if garmin_hrv_status in (None, "") else str(garmin_hrv_status),
+        "hrv_lower_bound": "" if lower_bound in (None, "") else str(lower_bound),
+        "hrv_upper_bound": "" if upper_bound in (None, "") else str(upper_bound),
+        "hrv_balance": balance,
+        "hrv_risk": _hrv_risk(balance),
+        "hrv_message": _hrv_direction_message(balance),
+    }
+
+
 def _load_latest_monitoring_health_data_with_metadata(
     connection,
     tables,
@@ -438,16 +503,24 @@ def _load_latest_monitoring_health_data_with_metadata(
             hrv_params,
         )
         if hrv_row:
-            raw_column = "last_night_average"
-            raw_value = hrv_row.get(raw_column)
-            if raw_value in (None, ""):
-                raw_column = "last_night"
-                raw_value = hrv_row.get(raw_column)
+            value_column = "last_night_average"
+            hrv_value = hrv_row.get(value_column)
+            if hrv_value in (None, ""):
+                value_column = "last_night"
+                hrv_value = hrv_row.get(value_column)
+            raw_column = value_column
+            raw_value = hrv_value
             if raw_value in (None, ""):
                 raw_column = "status"
                 raw_value = hrv_row.get(raw_column)
 
             hrv_status = _monitoring_hrv_to_status(hrv_row)
+            hrv_context = _hrv_context(
+                hrv_value=hrv_value,
+                lower_bound=hrv_row.get("baseline_low"),
+                upper_bound=hrv_row.get("baseline_high"),
+                garmin_hrv_status=hrv_row.get("status"),
+            )
             metrics["hrv_status"] = _metric_metadata(
                 value=hrv_status,
                 date=_date_from_timestamp(hrv_row.get("timestamp")),
@@ -457,6 +530,7 @@ def _load_latest_monitoring_health_data_with_metadata(
                 timestamp=hrv_row.get("timestamp") or "",
                 raw_value=raw_value if raw_value is not None else "",
                 reason="" if hrv_status else "no recent rows",
+                **hrv_context,
             )
         else:
             metrics["hrv_status"] = _metric_metadata(
@@ -707,6 +781,8 @@ def _latest_hrv_metric_from_garmin(connection, db_file, start_date=None):
 
     status_column = "status" if "status" in columns else None
     value_column = "last_night_avg" if "last_night_avg" in columns else None
+    lower_column = "baseline_low" if "baseline_low" in columns else None
+    upper_column = "baseline_upper" if "baseline_upper" in columns else None
     if not status_column and not value_column:
         return _metric_column_not_found(db_file, "hrv", "status")
 
@@ -715,6 +791,10 @@ def _latest_hrv_metric_from_garmin(connection, db_file, start_date=None):
         selected_columns.append(status_column)
     if value_column:
         selected_columns.append(value_column)
+    if lower_column:
+        selected_columns.append(lower_column)
+    if upper_column:
+        selected_columns.append(upper_column)
     query = "SELECT " + ", ".join(selected_columns) + " FROM hrv"
     params = ()
     if start_date:
@@ -735,6 +815,12 @@ def _latest_hrv_metric_from_garmin(connection, db_file, start_date=None):
         raw_column = value_column
         raw_value = row.get(value_column)
 
+    hrv_context = _hrv_context(
+        hrv_value=row.get(value_column) if value_column else "",
+        lower_bound=row.get(lower_column) if lower_column else "",
+        upper_bound=row.get(upper_column) if upper_column else "",
+        garmin_hrv_status=row.get(status_column) if status_column else "",
+    )
     return _metric_metadata(
         value=hrv_status,
         date=_date_from_timestamp(row.get("day")),
@@ -744,6 +830,7 @@ def _latest_hrv_metric_from_garmin(connection, db_file, start_date=None):
         timestamp=row.get("day") or "",
         raw_value=raw_value if raw_value is not None else "",
         reason="" if hrv_status else "no recent rows",
+        **hrv_context,
     )
 
 

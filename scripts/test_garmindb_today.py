@@ -49,6 +49,20 @@ def _print_metric(name, value, metadata):
         print(f"{name}_reason={metric.get('reason') or 'no recent rows'}")
 
 
+def _print_hrv_details(metadata):
+    metric = _metric(metadata, "hrv_status")
+    for field in [
+        "hrv_value",
+        "hrv_unit",
+        "garmin_hrv_status",
+        "hrv_balance",
+        "hrv_risk",
+        "hrv_message",
+    ]:
+        if metric.get(field):
+            print(f"{field}={metric.get(field)}")
+
+
 def _print_debug(metadata, db_path):
     print("\nDebug:")
     if metadata.get("db_dir"):
@@ -76,6 +90,18 @@ def _print_debug(metadata, db_path):
         print(f"  latest_timestamp={metric.get('timestamp', '')}")
         print(f"  raw_value={metric.get('raw_value', '')}")
         print(f"  reason={metric.get('reason', '')}")
+        if name == "hrv_status":
+            for field in [
+                "hrv_value",
+                "hrv_unit",
+                "garmin_hrv_status",
+                "hrv_lower_bound",
+                "hrv_upper_bound",
+                "hrv_balance",
+                "hrv_risk",
+                "hrv_message",
+            ]:
+                print(f"  {field}={metric.get(field, '')}")
 
 
 def main():
@@ -98,6 +124,7 @@ def main():
     print(f"source_date={metadata.get('source_date', health_data.date)}")
     _print_metric("sleep_hours", health_data.sleep_hours, metadata)
     _print_metric("hrv_status", health_data.hrv_status, metadata)
+    _print_hrv_details(metadata)
     _print_metric("resting_hr", health_data.resting_hr, metadata)
     _print_metric("body_battery", health_data.body_battery_or_energy, metadata)
     if health_data.stress not in (None, ""):
