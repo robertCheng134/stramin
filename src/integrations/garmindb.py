@@ -338,6 +338,8 @@ def _metric_metadata(
     timestamp="",
     raw_value="",
     reason="",
+    semantic_source="",
+    source_priority="",
     **extra,
 ):
     metadata = {
@@ -349,6 +351,8 @@ def _metric_metadata(
         "timestamp": timestamp,
         "raw_value": raw_value,
         "reason": reason,
+        "semantic_source": semantic_source,
+        "source_priority": source_priority,
     }
     metadata.update(extra)
     return metadata
@@ -530,13 +534,18 @@ def _load_latest_monitoring_health_data_with_metadata(
                 timestamp=hrv_row.get("timestamp") or "",
                 raw_value=raw_value if raw_value is not None else "",
                 reason="" if hrv_status else "no recent rows",
+                semantic_source="nightly_hrv",
+                source_priority="primary",
                 **hrv_context,
             )
         else:
             metrics["hrv_status"] = _metric_metadata(
                 db_file=db_file,
                 table="monitoring_hrv_status",
+                column="last_night_average",
                 reason="no recent rows",
+                semantic_source="nightly_hrv",
+                source_priority="primary",
             )
 
     hr_row = None
@@ -571,6 +580,8 @@ def _load_latest_monitoring_health_data_with_metadata(
                 timestamp=hr_row.get("timestamp") or "",
                 raw_value=hr_row.get("resting_hr") or "",
                 reason="" if resting_hr else "no recent rows",
+                semantic_source="monitoring_heart_rate",
+                source_priority="fallback",
             )
         else:
             metrics["resting_hr"] = _metric_metadata(
@@ -578,6 +589,8 @@ def _load_latest_monitoring_health_data_with_metadata(
                 table="monitoring_hr",
                 column="heart_rate",
                 reason="no recent rows",
+                semantic_source="monitoring_heart_rate",
+                source_priority="fallback",
             )
 
     hrv_status = metrics["hrv_status"]["value"]
@@ -691,6 +704,8 @@ def _latest_sleep_metric(connection, db_file, start_date=None):
         timestamp=row.get("day") or "",
         raw_value=row.get("total_sleep") or "",
         reason="" if sleep_hours else "no recent rows",
+        semantic_source="sleep_summary",
+        source_priority="primary",
     )
 
 
@@ -727,6 +742,8 @@ def _latest_stress_metric(connection, db_file, start_date=None):
         timestamp=row.get("timestamp") or "",
         raw_value=row.get("stress") or "",
         reason="" if stress else "no recent rows",
+        semantic_source="stress_sample",
+        source_priority="primary",
     )
 
 
@@ -768,6 +785,8 @@ def _latest_resting_hr_metric_from_garmin(connection, db_file, start_date=None):
         timestamp=row.get("day") or "",
         raw_value=row.get("resting_heart_rate") or "",
         reason="" if resting_hr else "no recent rows",
+        semantic_source="official_resting_hr",
+        source_priority="primary",
     )
 
 
@@ -830,6 +849,8 @@ def _latest_hrv_metric_from_garmin(connection, db_file, start_date=None):
         timestamp=row.get("day") or "",
         raw_value=raw_value if raw_value is not None else "",
         reason="" if hrv_status else "no recent rows",
+        semantic_source="nightly_hrv",
+        source_priority="fallback",
         **hrv_context,
     )
 
@@ -942,11 +963,11 @@ def load_latest_health_data_from_directory(db_dir=None, user_profile=None):
     ):
         metrics["hrv_status"] = garmin_metrics["hrv_status"]
 
-    metrics["resting_hr"] = monitoring_metrics["resting_hr"]
-    if not metrics["resting_hr"].get("value") and garmin_metrics["resting_hr"].get(
-        "value"
-    ):
-        metrics["resting_hr"] = garmin_metrics["resting_hr"]
+    metrics["resting_hr"] = garmin_metrics["resting_hr"]
+    if not metrics["resting_hr"].get("value") and monitoring_metrics[
+        "resting_hr"
+    ].get("value"):
+        metrics["resting_hr"] = monitoring_metrics["resting_hr"]
 
     metrics["sleep_hours"] = garmin_metrics["sleep_hours"]
     metrics["stress"] = garmin_metrics["stress"]
@@ -955,6 +976,8 @@ def load_latest_health_data_from_directory(db_dir=None, user_profile=None):
         "body_battery",
         "body_battery",
     )
+    metrics["body_battery"]["semantic_source"] = "body_battery"
+    metrics["body_battery"]["source_priority"] = "primary"
 
     source_date = _source_date_from_metrics(metrics)
     if not source_date:

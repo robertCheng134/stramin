@@ -87,6 +87,8 @@ def _print_debug(metadata, db_path):
         print(f"  db_file={metric.get('db_file', '')}")
         print(f"  table={metric.get('table', '')}")
         print(f"  column={metric.get('column', '')}")
+        print(f"  semantic_source={metric.get('semantic_source', '')}")
+        print(f"  source_priority={metric.get('source_priority', '')}")
         print(f"  latest_timestamp={metric.get('timestamp', '')}")
         print(f"  raw_value={metric.get('raw_value', '')}")
         print(f"  reason={metric.get('reason', '')}")

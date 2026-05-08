@@ -295,6 +295,8 @@ def test_garmindb_latest_health_data_reads_monitoring_schema(tmp_path):
     assert metadata["metrics"]["hrv_status"]["date"] == "2026-05-07"
     assert metadata["metrics"]["hrv_status"]["table"] == "monitoring_hrv_status"
     assert metadata["metrics"]["hrv_status"]["column"] == "last_night_average"
+    assert metadata["metrics"]["hrv_status"]["semantic_source"] == "nightly_hrv"
+    assert metadata["metrics"]["hrv_status"]["source_priority"] == "primary"
     assert metadata["metrics"]["hrv_status"]["hrv_value"] == "37.0"
     assert metadata["metrics"]["hrv_status"]["hrv_unit"] == "ms"
     assert metadata["metrics"]["hrv_status"]["garmin_hrv_status"] == "3"
@@ -308,6 +310,11 @@ def test_garmindb_latest_health_data_reads_monitoring_schema(tmp_path):
     )
     assert metadata["metrics"]["resting_hr"]["date"] == "2026-05-07"
     assert metadata["metrics"]["resting_hr"]["column"] == "heart_rate"
+    assert (
+        metadata["metrics"]["resting_hr"]["semantic_source"]
+        == "monitoring_heart_rate"
+    )
+    assert metadata["metrics"]["resting_hr"]["source_priority"] == "fallback"
     assert metadata["metrics"]["sleep_hours"]["reason"] == "table not found"
     assert metadata["metrics"]["body_battery"]["reason"] == "table not found"
 
@@ -494,14 +501,22 @@ def test_garmindb_latest_directory_combines_monitoring_and_garmin_db(tmp_path):
     assert health_data.date == "2026-05-07"
     assert health_data.sleep_hours == "7.5"
     assert health_data.hrv_status == "unbalanced"
-    assert health_data.resting_hr == "54"
+    assert health_data.resting_hr == "62"
     assert health_data.stress == "42"
     assert metadata["schema"] == "directory"
     assert metadata["metrics"]["sleep_hours"]["db_file"].endswith("garmin.db")
+    assert metadata["metrics"]["sleep_hours"]["semantic_source"] == "sleep_summary"
+    assert metadata["metrics"]["sleep_hours"]["source_priority"] == "primary"
     assert metadata["metrics"]["hrv_status"]["db_file"].endswith(
         "garmin_monitoring.db"
     )
-    assert metadata["metrics"]["resting_hr"]["table"] == "monitoring_hr"
+    assert metadata["metrics"]["hrv_status"]["semantic_source"] == "nightly_hrv"
+    assert metadata["metrics"]["hrv_status"]["source_priority"] == "primary"
+    assert metadata["metrics"]["resting_hr"]["table"] == "resting_hr"
+    assert (
+        metadata["metrics"]["resting_hr"]["semantic_source"] == "official_resting_hr"
+    )
+    assert metadata["metrics"]["resting_hr"]["source_priority"] == "primary"
     assert metadata["metrics"]["body_battery"]["reason"] == "table not found"
     assert metadata["metrics"]["hrv_status"]["hrv_value"] == "48.0"
     assert metadata["metrics"]["hrv_status"]["hrv_balance"] == "above_baseline"
@@ -522,6 +537,36 @@ def test_garmindb_latest_directory_falls_back_to_garmin_resting_hr(tmp_path):
 
     assert health_data.resting_hr == "62"
     assert metadata["metrics"]["resting_hr"]["table"] == "resting_hr"
+
+
+def test_garmindb_latest_directory_falls_back_to_monitoring_hr(tmp_path):
+    db_dir = tmp_path / "DBs"
+    db_dir.mkdir()
+    _create_monitoring_db(db_dir / "garmin_monitoring.db", include_hr=True)
+
+    with sqlite3.connect(db_dir / "garmin.db") as connection:
+        connection.execute(
+            """
+            CREATE TABLE sleep (
+                day DATETIME NOT NULL PRIMARY KEY,
+                total_sleep TIME NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            "INSERT INTO sleep (day, total_sleep) VALUES (?, ?)",
+            ("2026-05-07 00:00:00", "07:30:00.000000"),
+        )
+
+    health_data, metadata = load_latest_health_data_with_metadata(db_dir=db_dir)
+
+    assert health_data.resting_hr == "54"
+    assert metadata["metrics"]["resting_hr"]["table"] == "monitoring_hr"
+    assert (
+        metadata["metrics"]["resting_hr"]["semantic_source"]
+        == "monitoring_heart_rate"
+    )
+    assert metadata["metrics"]["resting_hr"]["source_priority"] == "fallback"
 
 
 def test_garmindb_hrv_direction_unknown_without_baseline(tmp_path):
