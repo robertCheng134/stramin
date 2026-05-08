@@ -1,6 +1,7 @@
 import os
 import time
 from datetime import date
+from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
@@ -11,6 +12,10 @@ from decision_engine import make_training_decision
 from garmin_health import GARMIN_HEALTH_CSV_PATH
 from garmin_health import load_garmin_health_rows, load_latest_garmin_health_with_source
 from gpt_analysis import analyze_recovery
+from integrations.garmindb import (
+    GarminDBImportError,
+    load_latest_health_data_with_metadata,
+)
 from logger import get_logger
 from recovery_rules import calculate_recovery
 from strava import fetch_recent_activities
@@ -23,11 +28,85 @@ from weekly_report import format_weekly_report
 
 TELEGRAM_API_URL = "https://api.telegram.org/bot{token}/{method}"
 MAX_TELEGRAM_MESSAGE_LENGTH = 4000
+DEFAULT_GARMINDB_DIR = Path("~/HealthData/DBs").expanduser()
+BODY_BATTERY_SAFE_FALLBACK = "50"
 ENTRY_FIELDS = ["sleep_hours", "hrv_status", "body_battery", "resting_hr", "stress"]
 OPTIONAL_ENTRY_FIELDS = {"stress"}
 VALID_HRV_STATUSES = {"balanced", "low", "poor", "unbalanced"}
 ENTRY_SESSIONS = {}
 logger = get_logger(__name__)
+
+
+def _metadata_metric(metadata, name):
+    return metadata.get("metrics", {}).get(name, {})
+
+
+def _engine_health_dict(health_data):
+    garmin_health = health_data.to_legacy_dict()
+    fallback_used = False
+
+    if garmin_health.get("body_battery") in (None, ""):
+        garmin_health["body_battery"] = BODY_BATTERY_SAFE_FALLBACK
+        fallback_used = True
+
+    return garmin_health, fallback_used
+
+
+def build_garmindb_today_preview(db_dir=None):
+    db_dir = db_dir or os.getenv("GARMINDB_DIR") or str(DEFAULT_GARMINDB_DIR)
+    health_data, metadata = load_latest_health_data_with_metadata(db_dir=db_dir)
+    garmin_health, body_battery_fallback_used = _engine_health_dict(health_data)
+    recovery_result = calculate_recovery(garmin_health)
+    decision = make_training_decision(
+        recovery_result=recovery_result,
+        trend_result={"fatigue_trend": "stable", "recovery_trend": "stable"},
+        garmin_health=garmin_health,
+        user_profile=load_user_profile(),
+    )
+
+    rationale = decision.get("reason", "")
+    if body_battery_fallback_used:
+        rationale += (
+            " Body Battery is unavailable from GarminDB, so recovery scoring used "
+            f"a neutral safe fallback ({BODY_BATTERY_SAFE_FALLBACK}) instead of "
+            "inventing a Garmin value."
+        )
+
+    return {
+        "health_data": health_data,
+        "metadata": metadata,
+        "recovery_result": recovery_result,
+        "decision": decision,
+        "recommendation": (
+            f"{decision.get('decision')} / {decision.get('intensity')} / "
+            f"{decision.get('suggested_activity')}"
+        ),
+        "rationale": rationale,
+    }
+
+
+def format_garmindb_today_response(preview):
+    health_data = preview["health_data"]
+    metadata = preview["metadata"]
+    hrv_metric = _metadata_metric(metadata, "hrv_status")
+
+    return (
+        "GarminDB Today Recommendation\n\n"
+        f"source_date={metadata.get('source_date', health_data.date)}\n"
+        f"sleep_hours={health_data.sleep_hours}\n"
+        f"hrv_value={hrv_metric.get('hrv_value', '')}\n"
+        f"hrv_balance={hrv_metric.get('hrv_balance', '')}\n"
+        f"hrv_risk={hrv_metric.get('hrv_risk', '')}\n"
+        f"resting_hr={health_data.resting_hr}\n"
+        f"stress={health_data.stress}\n"
+        f"recommendation={preview['recommendation']}\n"
+        f"rationale={preview['rationale']}"
+    )
+
+
+def build_garmindb_today_response():
+    preview = build_garmindb_today_preview()
+    return format_garmindb_today_response(preview)
 
 
 def _fetch_strava_activities_if_available():
@@ -289,11 +368,22 @@ def handle_command(text, chat_id=None):
         return help_text()
 
     if command == "/today":
+        load_dotenv()
+        try:
+            return build_garmindb_today_response()
+        except GarminDBImportError as error:
+            logger.warning("GarminDB skipped for /today: %s", error)
+        except Exception as error:
+            logger.warning("GarminDB skipped for /today: %s", error)
+
         try:
             return build_recommendation_context()["daily_report"]
         except Exception as error:
             logger.exception("Failed to generate /today report")
-            return f"Could not generate today's recommendation: {error}"
+            return (
+                f"Could not generate today's recommendation: {error}\n"
+                "You can use /entry to add today's Garmin metrics manually."
+            )
 
     if command == "/weekly":
         try:

@@ -5,6 +5,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import telegram_bot
+from health_data import HealthData
+from integrations.garmindb import GarminDBImportError
 
 
 def test_start_command_returns_intro():
@@ -26,6 +28,11 @@ def test_help_command_lists_commands():
 def test_today_command_uses_daily_report(monkeypatch):
     monkeypatch.setattr(
         telegram_bot,
+        "build_garmindb_today_response",
+        lambda: (_ for _ in ()).throw(GarminDBImportError("missing db")),
+    )
+    monkeypatch.setattr(
+        telegram_bot,
         "build_recommendation_context",
         lambda include_gpt=True: {
             "daily_report": "Daily Recovery Report",
@@ -34,6 +41,119 @@ def test_today_command_uses_daily_report(monkeypatch):
     )
 
     assert telegram_bot.handle_command("/today") == "Daily Recovery Report"
+
+
+def test_today_command_prefers_garmindb_recommendation(monkeypatch):
+    called = {"csv": False}
+
+    def fake_csv_context(include_gpt=True):
+        called["csv"] = True
+        return {
+            "daily_report": "CSV Daily Recovery Report",
+            "weekly_report": "Weekly Training Plan",
+        }
+
+    monkeypatch.setenv("GARMINDB_DIR", "/tmp/garmindb")
+    monkeypatch.setattr(telegram_bot, "build_recommendation_context", fake_csv_context)
+    monkeypatch.setattr(
+        telegram_bot,
+        "load_latest_health_data_with_metadata",
+        lambda db_dir: (
+            HealthData(
+                date="2026-05-07",
+                sleep_hours="7.5",
+                hrv_status="balanced",
+                body_battery_or_energy="",
+                resting_hr="62",
+                stress="42",
+                source="garmindb",
+            ),
+            {
+                "source_date": "2026-05-07",
+                "metrics": {
+                    "hrv_status": {
+                        "hrv_value": "37",
+                        "hrv_balance": "within_baseline",
+                        "hrv_risk": "stable",
+                    }
+                },
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        telegram_bot,
+        "calculate_recovery",
+        lambda garmin_health: {
+            "recovery_score": 80,
+            "recovery_level": "good",
+        },
+    )
+    monkeypatch.setattr(
+        telegram_bot,
+        "make_training_decision",
+        lambda **kwargs: {
+            "decision": "train",
+            "intensity": "normal",
+            "suggested_activity": "walking",
+            "reason": "Looks ready.",
+        },
+    )
+    monkeypatch.setattr(
+        telegram_bot,
+        "load_user_profile",
+        lambda: {"preferred_activities": ["walking"]},
+    )
+
+    response = telegram_bot.handle_command("/today")
+
+    assert "GarminDB Today Recommendation" in response
+    assert "source_date=2026-05-07" in response
+    assert "sleep_hours=7.5" in response
+    assert "hrv_value=37" in response
+    assert "hrv_balance=within_baseline" in response
+    assert "hrv_risk=stable" in response
+    assert "resting_hr=62" in response
+    assert "stress=42" in response
+    assert "recommendation=train / normal / walking" in response
+    assert "rationale=Looks ready." in response
+    assert "Body Battery is unavailable" in response
+    assert called["csv"] is False
+
+
+def test_today_command_falls_back_when_garmindb_unavailable(monkeypatch):
+    monkeypatch.setattr(
+        telegram_bot,
+        "build_garmindb_today_response",
+        lambda: (_ for _ in ()).throw(GarminDBImportError("missing db")),
+    )
+    monkeypatch.setattr(
+        telegram_bot,
+        "build_recommendation_context",
+        lambda include_gpt=True: {
+            "daily_report": "Fallback CSV Daily Report",
+            "weekly_report": "Weekly Training Plan",
+        },
+    )
+
+    assert telegram_bot.handle_command("/today") == "Fallback CSV Daily Report"
+
+
+def test_today_command_prompts_entry_when_all_sources_fail(monkeypatch):
+    monkeypatch.setattr(
+        telegram_bot,
+        "build_garmindb_today_response",
+        lambda: (_ for _ in ()).throw(GarminDBImportError("missing db")),
+    )
+    monkeypatch.setattr(
+        telegram_bot,
+        "build_recommendation_context",
+        lambda include_gpt=True: (_ for _ in ()).throw(RuntimeError("no csv")),
+    )
+
+    response = telegram_bot.handle_command("/today")
+
+    assert "Could not generate today's recommendation" in response
+    assert "/entry" in response
 
 
 def test_weekly_command_uses_weekly_report_without_gpt(monkeypatch):
