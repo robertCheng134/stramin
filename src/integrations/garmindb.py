@@ -83,6 +83,14 @@ def _list_columns(connection, table_name):
     return [row[1] for row in cursor.fetchall()]
 
 
+def _has_table(connection, table_name):
+    cursor = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND lower(name) = lower(?)",
+        (table_name,),
+    )
+    return cursor.fetchone() is not None
+
+
 def _match_column(columns, aliases):
     column_lookup = {column.lower(): column for column in columns}
     for alias in aliases:
@@ -240,6 +248,12 @@ def _normalize_hrv_status(value, kind):
     return "poor"
 
 
+def _normalize_optional_int(value, min_value, max_value, label):
+    if value in (None, ""):
+        return ""
+    return _normalize_int(value, min_value, max_value, label)
+
+
 def _convert_row(row, mapping):
     date_value = _normalize_date(row.get(mapping["date"]["column"]))
     sleep_hours = _normalize_sleep(
@@ -277,6 +291,159 @@ def _convert_row(row, mapping):
         stress=stress,
         source="garmindb",
     )
+
+
+def _latest_date_from_monitoring(connection, start_date=None):
+    date_queries = []
+    params = ()
+    if start_date:
+        params = (start_date, start_date)
+        date_filter = "WHERE date(timestamp) >= ?"
+    else:
+        date_filter = ""
+
+    if _has_table(connection, "monitoring_hrv_status"):
+        date_queries.append(
+            f"SELECT date(timestamp) AS day FROM monitoring_hrv_status {date_filter}"
+        )
+    if _has_table(connection, "monitoring_hr"):
+        date_queries.append(f"SELECT date(timestamp) AS day FROM monitoring_hr {date_filter}")
+
+    if not date_queries:
+        raise GarminDBImportError(
+            "GarminDB monitoring database is missing monitoring_hrv_status and monitoring_hr tables."
+        )
+
+    query = "SELECT max(day) FROM (" + " UNION ALL ".join(date_queries) + ")"
+    cursor = connection.execute(query, params[: len(date_queries)])
+    latest_day = cursor.fetchone()[0]
+    if not latest_day:
+        raise GarminDBImportError("No GarminDB monitoring rows found.")
+
+    return latest_day
+
+
+def _fetch_one(connection, query, params=()):
+    cursor = connection.execute(query, params)
+    row = cursor.fetchone()
+    return dict(row) if row else None
+
+
+def _monitoring_hrv_to_status(row):
+    if not row:
+        return ""
+
+    raw_status = row.get("status")
+    if isinstance(raw_status, str) and raw_status.lower() in VALID_HRV_STATUSES:
+        return raw_status.lower()
+
+    last_night_average = row.get("last_night_average") or row.get("last_night")
+    baseline_low = row.get("baseline_low")
+    baseline_high = row.get("baseline_high")
+    try:
+        hrv_value = float(last_night_average)
+        low = float(baseline_low)
+        high = float(baseline_high)
+    except (TypeError, ValueError):
+        if last_night_average not in (None, ""):
+            return _normalize_hrv_status(last_night_average, "value")
+        return ""
+
+    if hrv_value < low:
+        return "low"
+    if hrv_value > high:
+        return "unbalanced"
+    return "balanced"
+
+
+def _load_latest_monitoring_health_data(connection, start_date=None):
+    latest_day = _latest_date_from_monitoring(connection, start_date=start_date)
+
+    hrv_row = None
+    if _has_table(connection, "monitoring_hrv_status"):
+        hrv_filter = ""
+        hrv_params = ()
+        if start_date:
+            hrv_filter = "WHERE date(timestamp) >= ?"
+            hrv_params = (start_date,)
+        hrv_row = _fetch_one(
+            connection,
+            f"""
+            SELECT timestamp, weekly_average, last_night, last_night_average,
+                   baseline_low, baseline_high, status
+            FROM monitoring_hrv_status
+            {hrv_filter}
+            ORDER BY timestamp DESC
+            LIMIT 1
+            """,
+            hrv_params,
+        )
+
+    hr_row = None
+    if _has_table(connection, "monitoring_hr"):
+        hr_row = _fetch_one(
+            connection,
+            """
+            SELECT min(heart_rate) AS resting_hr
+            FROM monitoring_hr
+            WHERE date(timestamp) = ?
+            """,
+            (latest_day,),
+        )
+
+    hrv_status = _monitoring_hrv_to_status(hrv_row)
+    resting_hr = _normalize_optional_int(
+        (hr_row or {}).get("resting_hr"),
+        20,
+        120,
+        "resting_hr",
+    )
+
+    if not hrv_status and not resting_hr:
+        raise GarminDBImportError("No valid GarminDB monitoring health data found.")
+
+    return HealthData(
+        date=latest_day,
+        sleep_hours="",
+        hrv_status=hrv_status,
+        body_battery_or_energy="",
+        resting_hr=resting_hr,
+        stress="",
+        source="garmindb",
+    )
+
+
+def load_latest_health_data(db_path=None, user_profile=None):
+    path = resolve_garmindb_path(db_path)
+    start_date = _resolve_garmin_start_date(user_profile)
+
+    try:
+        with sqlite3.connect(path) as connection:
+            connection.row_factory = sqlite3.Row
+            try:
+                table_name = _find_supported_table(connection)
+            except GarminDBImportError:
+                return _load_latest_monitoring_health_data(
+                    connection,
+                    start_date=start_date,
+                )
+
+            columns = _list_columns(connection, table_name)
+            mapping = _build_column_mapping(columns)
+            rows = _select_rows(connection, table_name, mapping, start_date=start_date)
+    except sqlite3.Error as error:
+        raise GarminDBImportError(f"Unable to read GarminDB database: {error}") from error
+
+    if not rows:
+        raise GarminDBImportError("No GarminDB health rows found.")
+
+    for row in reversed(rows):
+        try:
+            return _convert_row(row, mapping)
+        except ValueError as error:
+            logger.warning("Skipping invalid GarminDB row: %s", error)
+
+    raise GarminDBImportError("No valid GarminDB health data found.")
 
 
 def load_health_data(db_path=None, user_profile=None):

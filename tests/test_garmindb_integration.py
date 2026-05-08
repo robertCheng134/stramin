@@ -7,7 +7,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from integrations.garmindb import GarminDBImportError, load_health_data
+from integrations.garmindb import (
+    GarminDBImportError,
+    load_health_data,
+    load_latest_health_data,
+)
 
 
 def _create_daily_summary_db(path, rows):
@@ -56,6 +60,23 @@ def test_garmindb_adapter_returns_unified_health_data(tmp_path):
     assert health_data.resting_hr == "55"
     assert health_data.stress == "25"
     assert health_data.source == "garmindb"
+
+
+def test_garmindb_latest_health_data_returns_latest_daily_summary(tmp_path):
+    db_path = tmp_path / "garmin.db"
+    _create_daily_summary_db(
+        db_path,
+        [
+            ("2026-05-06", 450, "balanced", 72, 55, 25),
+            ("2026-05-07", 420, "low", 60, 58, 35),
+        ],
+    )
+
+    health_data = load_latest_health_data(db_path)
+
+    assert health_data.date == "2026-05-07"
+    assert health_data.hrv_status == "low"
+    assert health_data.resting_hr == "58"
 
 
 def test_garmindb_adapter_uses_env_path(tmp_path, monkeypatch):
@@ -185,3 +206,122 @@ def test_garmindb_adapter_ignores_invalid_garmin_start_date(tmp_path):
     )
 
     assert [row.date for row in health_data] == ["2026-04-30", "2026-05-07"]
+
+
+def test_garmindb_latest_health_data_reads_monitoring_schema(tmp_path):
+    db_path = tmp_path / "garmin_monitoring.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE monitoring_hrv_status (
+                timestamp DATETIME NOT NULL,
+                weekly_average FLOAT,
+                last_night FLOAT,
+                last_night_average FLOAT,
+                baseline_low FLOAT,
+                baseline_high FLOAT,
+                status INTEGER,
+                reading_count INTEGER,
+                PRIMARY KEY (timestamp)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE monitoring_hr (
+                timestamp DATETIME NOT NULL,
+                heart_rate INTEGER NOT NULL,
+                PRIMARY KEY (timestamp)
+            )
+            """
+        )
+        connection.executemany(
+            """
+            INSERT INTO monitoring_hrv_status (
+                timestamp,
+                weekly_average,
+                last_night,
+                last_night_average,
+                baseline_low,
+                baseline_high,
+                status,
+                reading_count
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ("2026-05-06 23:00:00", 34, 32, 34, 35, 39, 2, 10),
+                ("2026-05-07 23:00:00", 36, 37, 37, 35, 39, 3, 10),
+            ],
+        )
+        connection.executemany(
+            "INSERT INTO monitoring_hr (timestamp, heart_rate) VALUES (?, ?)",
+            [
+                ("2026-05-07 01:00:00", 70),
+                ("2026-05-07 02:00:00", 52),
+                ("2026-05-07 03:00:00", 55),
+            ],
+        )
+
+    health_data = load_latest_health_data(db_path)
+
+    assert health_data.date == "2026-05-07"
+    assert health_data.sleep_hours == ""
+    assert health_data.hrv_status == "balanced"
+    assert health_data.resting_hr == "52"
+    assert health_data.body_battery_or_energy == ""
+
+
+def test_garmindb_latest_health_data_uses_latest_available_hrv(tmp_path):
+    db_path = tmp_path / "garmin_monitoring.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE monitoring_hrv_status (
+                timestamp DATETIME NOT NULL,
+                weekly_average FLOAT,
+                last_night FLOAT,
+                last_night_average FLOAT,
+                baseline_low FLOAT,
+                baseline_high FLOAT,
+                status INTEGER,
+                reading_count INTEGER,
+                PRIMARY KEY (timestamp)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE monitoring_hr (
+                timestamp DATETIME NOT NULL,
+                heart_rate INTEGER NOT NULL,
+                PRIMARY KEY (timestamp)
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO monitoring_hrv_status (
+                timestamp,
+                weekly_average,
+                last_night,
+                last_night_average,
+                baseline_low,
+                baseline_high,
+                status,
+                reading_count
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("2026-05-06 23:00:00", 34, 32, 32, 35, 39, 2, 10),
+        )
+        connection.execute(
+            "INSERT INTO monitoring_hr (timestamp, heart_rate) VALUES (?, ?)",
+            ("2026-05-07 02:00:00", 58),
+        )
+
+    health_data = load_latest_health_data(db_path)
+
+    assert health_data.date == "2026-05-07"
+    assert health_data.hrv_status == "low"
+    assert health_data.resting_hr == "58"
