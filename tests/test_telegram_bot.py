@@ -1,4 +1,5 @@
 import sys
+from datetime import date
 from pathlib import Path
 
 
@@ -107,19 +108,56 @@ def test_today_command_prefers_garmindb_recommendation(monkeypatch):
 
     response = telegram_bot.handle_command("/today")
 
-    assert "GarminDB Today Recommendation" in response
-    assert "source_date=2026-05-07" in response
+    assert "Today Recommendation" in response
+    assert "latest_recovery_date=2026-05-07" in response
     assert "sleep_hours=7.5" in response
     assert "hrv_value=37" in response
     assert "hrv_5min_high=52" in response
-    assert "hrv_balance=within_baseline" in response
-    assert "hrv_risk=stable" in response
+    assert "hrv_balance=Within baseline" in response
+    assert "hrv_risk" not in response
     assert "resting_hr=62" in response
     assert "stress=42" in response
     assert "recommendation=train / normal / walking" in response
     assert "rationale=Looks ready." in response
-    assert "Body Battery is unavailable" in response
+    assert "Body Battery was unavailable" in response
     assert called["csv"] is False
+
+
+def test_garmindb_today_response_includes_freshness_message(monkeypatch):
+    class FakeDate:
+        @staticmethod
+        def today():
+            return date(2026, 5, 8)
+
+    monkeypatch.setattr(telegram_bot, "date", FakeDate)
+    preview = {
+        "health_data": HealthData(
+            date="2026-05-07",
+            sleep_hours="7.5",
+            hrv_status="low",
+            body_battery_or_energy="50",
+            resting_hr="62",
+            stress="42",
+            source="garmindb",
+        ),
+        "metadata": {
+            "source_date": "2026-05-07",
+            "metrics": {
+                "hrv_status": {
+                    "hrv_value": "31",
+                    "hrv_5min_high": "52",
+                    "hrv_balance": "below_baseline",
+                }
+            },
+        },
+        "recommendation": "light_training / low / walking",
+        "rationale": "Take it easy.",
+    }
+
+    response = telegram_bot.format_garmindb_today_response(preview)
+
+    assert "Latest finalized Garmin recovery data is from 2026-05-07." in response
+    assert "hrv_balance=Below baseline" in response
 
 
 def test_today_command_falls_back_when_garmindb_unavailable(monkeypatch):

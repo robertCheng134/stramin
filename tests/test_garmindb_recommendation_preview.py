@@ -103,7 +103,7 @@ def test_build_recommendation_preview_uses_garmindb_health_data(tmp_path):
         "recovery_day",
         "rest",
     }
-    assert "Body Battery is unavailable" in preview["rationale"]
+    assert "Body Battery was unavailable" in preview["rationale"]
 
 
 def test_print_preview_outputs_required_fields(tmp_path, capsys):
@@ -115,12 +115,12 @@ def test_print_preview_outputs_required_fields(tmp_path, capsys):
     preview_script.print_preview(preview)
 
     output = capsys.readouterr().out
-    assert "source_date=2026-05-07" in output
+    assert "latest_recovery_date=2026-05-07" in output
     assert "sleep_hours=7.5" in output
     assert "hrv_value=37" in output
     assert "hrv_5min_high=52" in output
-    assert "hrv_balance=within_baseline" in output
-    assert "hrv_risk=stable" in output
+    assert "hrv_balance=Within baseline" in output
+    assert "hrv_risk" not in output
     assert "resting_hr=62" in output
     assert "stress=42" in output
     assert "recommendation=" in output

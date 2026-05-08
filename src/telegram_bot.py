@@ -41,6 +41,32 @@ def _metadata_metric(metadata, name):
     return metadata.get("metrics", {}).get(name, {})
 
 
+def _user_facing_hrv_balance(hrv_metric):
+    balance = hrv_metric.get("hrv_balance")
+    if balance == "below_baseline":
+        return "Below baseline"
+    if balance == "within_baseline":
+        return "Within baseline"
+    if balance == "above_baseline":
+        return "Above baseline"
+
+    status = str(hrv_metric.get("value") or "").strip().lower()
+    if status in {"low", "poor", "unbalanced"}:
+        return "Below baseline"
+    if status == "balanced":
+        return "Within baseline"
+    if status == "high":
+        return "Above baseline"
+    return "Unknown"
+
+
+def _freshness_message(recovery_date):
+    today = date.today().isoformat()
+    if recovery_date and recovery_date != today:
+        return f"Latest finalized Garmin recovery data is from {recovery_date}."
+    return ""
+
+
 def _engine_health_dict(health_data):
     garmin_health = health_data.to_legacy_dict()
     fallback_used = False
@@ -67,9 +93,7 @@ def build_garmindb_today_preview(db_dir=None):
     rationale = decision.get("reason", "")
     if body_battery_fallback_used:
         rationale += (
-            " Body Battery is unavailable from GarminDB, so recovery scoring used "
-            f"a neutral safe fallback ({BODY_BATTERY_SAFE_FALLBACK}) instead of "
-            "inventing a Garmin value."
+            " Body Battery was unavailable, so recovery scoring used a neutral fallback."
         )
 
     return {
@@ -89,15 +113,18 @@ def format_garmindb_today_response(preview):
     health_data = preview["health_data"]
     metadata = preview["metadata"]
     hrv_metric = _metadata_metric(metadata, "hrv_status")
+    recovery_date = metadata.get("source_date", health_data.date)
+    freshness_message = _freshness_message(recovery_date)
+    freshness_section = f"{freshness_message}\n" if freshness_message else ""
 
     return (
-        "GarminDB Today Recommendation\n\n"
-        f"source_date={metadata.get('source_date', health_data.date)}\n"
+        "Today Recommendation\n\n"
+        f"{freshness_section}"
+        f"latest_recovery_date={recovery_date}\n"
         f"sleep_hours={health_data.sleep_hours}\n"
         f"hrv_value={hrv_metric.get('hrv_value', '')}\n"
         f"hrv_5min_high={hrv_metric.get('hrv_5min_high', '')}\n"
-        f"hrv_balance={hrv_metric.get('hrv_balance', '')}\n"
-        f"hrv_risk={hrv_metric.get('hrv_risk', '')}\n"
+        f"hrv_balance={_user_facing_hrv_balance(hrv_metric)}\n"
         f"resting_hr={health_data.resting_hr}\n"
         f"stress={health_data.stress}\n"
         f"recommendation={preview['recommendation']}\n"
