@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 SRC_DIR = ROOT_DIR / "src"
-DEFAULT_GARMINDB_PATH = Path("~/HealthData/DBs/garmin_monitoring.db").expanduser()
+DEFAULT_GARMINDB_DIR = Path("~/HealthData/DBs").expanduser()
 
 sys.path.insert(0, str(SRC_DIR))
 
@@ -21,8 +21,13 @@ def parse_args():
     )
     parser.add_argument(
         "--db-path",
-        default=str(DEFAULT_GARMINDB_PATH),
-        help="Path to GarminDB SQLite database.",
+        default=None,
+        help="Path to a single GarminDB SQLite database. Keeps legacy mode.",
+    )
+    parser.add_argument(
+        "--db-dir",
+        default=str(DEFAULT_GARMINDB_DIR),
+        help="Path to GarminDB directory containing garmin.db and garmin_monitoring.db.",
     )
     parser.add_argument(
         "--debug",
@@ -46,13 +51,26 @@ def _print_metric(name, value, metadata):
 
 def _print_debug(metadata, db_path):
     print("\nDebug:")
-    print(f"db_path={db_path}")
+    if metadata.get("db_dir"):
+        print(f"db_dir={metadata.get('db_dir')}")
+    if db_path:
+        print(f"db_path={db_path}")
+    if metadata.get("db_files"):
+        print("db_files:")
+        for name, path in metadata["db_files"].items():
+            print(f"  {name}={path}")
     print(f"schema={metadata.get('schema', '')}")
-    print(f"tables={', '.join(metadata.get('tables', []))}")
+    if metadata.get("tables_by_db"):
+        print("tables_by_db:")
+        for name, tables in metadata["tables_by_db"].items():
+            print(f"  {name}={', '.join(tables)}")
+    else:
+        print(f"tables={', '.join(metadata.get('tables', []))}")
 
     for name in ["sleep_hours", "hrv_status", "resting_hr", "body_battery", "stress"]:
         metric = _metric(metadata, name)
         print(f"\n{name}:")
+        print(f"  db_file={metric.get('db_file', '')}")
         print(f"  table={metric.get('table', '')}")
         print(f"  column={metric.get('column', '')}")
         print(f"  latest_timestamp={metric.get('timestamp', '')}")
@@ -64,7 +82,14 @@ def main():
     args = parse_args()
 
     try:
-        health_data, metadata = load_latest_health_data_with_metadata(args.db_path)
+        if args.db_path:
+            health_data, metadata = load_latest_health_data_with_metadata(
+                db_path=args.db_path
+            )
+        else:
+            health_data, metadata = load_latest_health_data_with_metadata(
+                db_dir=args.db_dir
+            )
     except GarminDBImportError as error:
         print(f"GarminDB today flow failed: {error}")
         return 1

@@ -332,6 +332,7 @@ def _fetch_one(connection, query, params=()):
 def _metric_metadata(
     value="",
     date="",
+    db_file="",
     table="",
     column="",
     timestamp="",
@@ -341,6 +342,7 @@ def _metric_metadata(
     return {
         "value": value,
         "date": date,
+        "db_file": str(db_file) if db_file else "",
         "table": table,
         "column": column,
         "timestamp": timestamp,
@@ -353,6 +355,25 @@ def _date_from_timestamp(value):
     if value in (None, ""):
         return ""
     return str(value).split("T")[0].split(" ")[0]
+
+
+def _time_to_hours(value):
+    text = str(value or "").strip()
+    if not text:
+        return ""
+
+    parts = text.split(":")
+    if len(parts) < 2:
+        return ""
+
+    try:
+        hours = int(parts[0])
+        minutes = int(parts[1])
+        seconds = float(parts[2]) if len(parts) > 2 else 0
+    except ValueError:
+        return ""
+
+    return str(round(hours + (minutes / 60) + (seconds / 3600), 2))
 
 
 def _monitoring_hrv_to_status(row):
@@ -386,6 +407,7 @@ def _load_latest_monitoring_health_data_with_metadata(
     connection,
     tables,
     start_date=None,
+    db_file="",
 ):
     latest_day = _latest_date_from_monitoring(connection, start_date=start_date)
     metrics = {
@@ -429,6 +451,7 @@ def _load_latest_monitoring_health_data_with_metadata(
             metrics["hrv_status"] = _metric_metadata(
                 value=hrv_status,
                 date=_date_from_timestamp(hrv_row.get("timestamp")),
+                db_file=db_file,
                 table="monitoring_hrv_status",
                 column=raw_column,
                 timestamp=hrv_row.get("timestamp") or "",
@@ -437,6 +460,7 @@ def _load_latest_monitoring_health_data_with_metadata(
             )
         else:
             metrics["hrv_status"] = _metric_metadata(
+                db_file=db_file,
                 table="monitoring_hrv_status",
                 reason="no recent rows",
             )
@@ -467,6 +491,7 @@ def _load_latest_monitoring_health_data_with_metadata(
             metrics["resting_hr"] = _metric_metadata(
                 value=resting_hr,
                 date=_date_from_timestamp(hr_row.get("timestamp")),
+                db_file=db_file,
                 table="monitoring_hr",
                 column="heart_rate",
                 timestamp=hr_row.get("timestamp") or "",
@@ -475,6 +500,7 @@ def _load_latest_monitoring_health_data_with_metadata(
             )
         else:
             metrics["resting_hr"] = _metric_metadata(
+                db_file=db_file,
                 table="monitoring_hr",
                 column="heart_rate",
                 reason="no recent rows",
@@ -498,6 +524,7 @@ def _load_latest_monitoring_health_data_with_metadata(
 
     return health_data, {
         "schema": "monitoring",
+        "db_file": str(db_file) if db_file else "",
         "tables": tables,
         "source_date": latest_day,
         "metrics": metrics,
@@ -513,13 +540,373 @@ def _load_latest_monitoring_health_data(connection, start_date=None):
     return health_data
 
 
-def _daily_summary_metadata(row, mapping, table_name, tables, health_data):
+def resolve_garmindb_dir(db_dir=None):
+    resolved_dir = db_dir or os.getenv("GARMINDB_DIR") or "~/HealthData/DBs"
+    path = Path(resolved_dir).expanduser()
+    if not path.exists():
+        raise GarminDBImportError(f"GarminDB directory not found: {path}")
+    if not path.is_dir():
+        raise GarminDBImportError(f"GarminDB path is not a directory: {path}")
+    return path
+
+
+def _empty_metrics():
+    return {
+        "sleep_hours": _metric_metadata(reason="unsupported GarminDB schema"),
+        "hrv_status": _metric_metadata(reason="unsupported GarminDB schema"),
+        "resting_hr": _metric_metadata(reason="unsupported GarminDB schema"),
+        "body_battery": _metric_metadata(reason="table not found"),
+        "stress": _metric_metadata(reason="unsupported GarminDB schema"),
+    }
+
+
+def _metric_table_not_found(db_file, table, column=""):
+    return _metric_metadata(
+        db_file=db_file,
+        table=table,
+        column=column,
+        reason="table not found",
+    )
+
+
+def _metric_column_not_found(db_file, table, column=""):
+    return _metric_metadata(
+        db_file=db_file,
+        table=table,
+        column=column,
+        reason="column not found",
+    )
+
+
+def _metric_no_recent_rows(db_file, table, column):
+    return _metric_metadata(
+        db_file=db_file,
+        table=table,
+        column=column,
+        reason="no recent rows",
+    )
+
+
+def _latest_sleep_metric(connection, db_file, start_date=None):
+    if not _has_table(connection, "sleep"):
+        return _metric_table_not_found(db_file, "sleep", "total_sleep")
+
+    columns = _list_columns(connection, "sleep")
+    if "day" not in columns:
+        return _metric_column_not_found(db_file, "sleep", "day")
+    if "total_sleep" not in columns:
+        return _metric_column_not_found(db_file, "sleep", "total_sleep")
+
+    query = 'SELECT day, total_sleep FROM sleep'
+    params = ()
+    if start_date:
+        query += ' WHERE date(day) >= ?'
+        params = (start_date,)
+    query += ' ORDER BY day DESC LIMIT 1'
+    row = _fetch_one(connection, query, params)
+    if not row:
+        return _metric_no_recent_rows(db_file, "sleep", "total_sleep")
+
+    sleep_hours = _time_to_hours(row.get("total_sleep"))
+    return _metric_metadata(
+        value=sleep_hours,
+        date=_date_from_timestamp(row.get("day")),
+        db_file=db_file,
+        table="sleep",
+        column="total_sleep",
+        timestamp=row.get("day") or "",
+        raw_value=row.get("total_sleep") or "",
+        reason="" if sleep_hours else "no recent rows",
+    )
+
+
+def _latest_stress_metric(connection, db_file, start_date=None):
+    if not _has_table(connection, "stress"):
+        return _metric_table_not_found(db_file, "stress", "stress")
+
+    columns = _list_columns(connection, "stress")
+    if "timestamp" not in columns:
+        return _metric_column_not_found(db_file, "stress", "timestamp")
+    if "stress" not in columns:
+        return _metric_column_not_found(db_file, "stress", "stress")
+
+    query = 'SELECT timestamp, stress FROM stress'
+    params = ()
+    if start_date:
+        query += ' WHERE date(timestamp) >= ?'
+        params = (start_date,)
+    query += ' ORDER BY timestamp DESC LIMIT 1'
+    row = _fetch_one(connection, query, params)
+    if not row:
+        return _metric_no_recent_rows(db_file, "stress", "stress")
+
+    try:
+        stress = _normalize_optional_int(row.get("stress"), 0, 100, "stress")
+    except ValueError:
+        stress = ""
+    return _metric_metadata(
+        value=stress,
+        date=_date_from_timestamp(row.get("timestamp")),
+        db_file=db_file,
+        table="stress",
+        column="stress",
+        timestamp=row.get("timestamp") or "",
+        raw_value=row.get("stress") or "",
+        reason="" if stress else "no recent rows",
+    )
+
+
+def _latest_resting_hr_metric_from_garmin(connection, db_file, start_date=None):
+    if not _has_table(connection, "resting_hr"):
+        return _metric_table_not_found(db_file, "resting_hr", "resting_heart_rate")
+
+    columns = _list_columns(connection, "resting_hr")
+    if "day" not in columns:
+        return _metric_column_not_found(db_file, "resting_hr", "day")
+    if "resting_heart_rate" not in columns:
+        return _metric_column_not_found(db_file, "resting_hr", "resting_heart_rate")
+
+    query = 'SELECT day, resting_heart_rate FROM resting_hr'
+    params = ()
+    if start_date:
+        query += ' WHERE date(day) >= ?'
+        params = (start_date,)
+    query += ' ORDER BY day DESC LIMIT 1'
+    row = _fetch_one(connection, query, params)
+    if not row:
+        return _metric_no_recent_rows(db_file, "resting_hr", "resting_heart_rate")
+
+    try:
+        resting_hr = _normalize_optional_int(
+            row.get("resting_heart_rate"),
+            20,
+            120,
+            "resting_hr",
+        )
+    except ValueError:
+        resting_hr = ""
+    return _metric_metadata(
+        value=resting_hr,
+        date=_date_from_timestamp(row.get("day")),
+        db_file=db_file,
+        table="resting_hr",
+        column="resting_heart_rate",
+        timestamp=row.get("day") or "",
+        raw_value=row.get("resting_heart_rate") or "",
+        reason="" if resting_hr else "no recent rows",
+    )
+
+
+def _latest_hrv_metric_from_garmin(connection, db_file, start_date=None):
+    if not _has_table(connection, "hrv"):
+        return _metric_table_not_found(db_file, "hrv", "status")
+
+    columns = _list_columns(connection, "hrv")
+    if "day" not in columns:
+        return _metric_column_not_found(db_file, "hrv", "day")
+
+    status_column = "status" if "status" in columns else None
+    value_column = "last_night_avg" if "last_night_avg" in columns else None
+    if not status_column and not value_column:
+        return _metric_column_not_found(db_file, "hrv", "status")
+
+    selected_columns = ["day"]
+    if status_column:
+        selected_columns.append(status_column)
+    if value_column:
+        selected_columns.append(value_column)
+    query = "SELECT " + ", ".join(selected_columns) + " FROM hrv"
+    params = ()
+    if start_date:
+        query += " WHERE date(day) >= ?"
+        params = (start_date,)
+    query += " ORDER BY day DESC LIMIT 1"
+    row = _fetch_one(connection, query, params)
+    if not row:
+        return _metric_no_recent_rows(db_file, "hrv", status_column or value_column)
+
+    raw_column = status_column or value_column
+    raw_value = row.get(raw_column)
+    hrv_status = ""
+    if status_column and str(row.get(status_column) or "").lower() in VALID_HRV_STATUSES:
+        hrv_status = str(row.get(status_column)).lower()
+    elif value_column and row.get(value_column) not in (None, ""):
+        hrv_status = _normalize_hrv_status(row.get(value_column), "value")
+        raw_column = value_column
+        raw_value = row.get(value_column)
+
+    return _metric_metadata(
+        value=hrv_status,
+        date=_date_from_timestamp(row.get("day")),
+        db_file=db_file,
+        table="hrv",
+        column=raw_column,
+        timestamp=row.get("day") or "",
+        raw_value=raw_value if raw_value is not None else "",
+        reason="" if hrv_status else "no recent rows",
+    )
+
+
+def _read_monitoring_metrics(monitoring_path, start_date=None):
+    metrics = {
+        "hrv_status": _metric_table_not_found(
+            monitoring_path,
+            "monitoring_hrv_status",
+            "last_night_average",
+        ),
+        "resting_hr": _metric_table_not_found(
+            monitoring_path,
+            "monitoring_hr",
+            "heart_rate",
+        ),
+    }
+    tables = []
+    if not monitoring_path.exists():
+        return metrics, tables
+
+    with sqlite3.connect(monitoring_path) as connection:
+        connection.row_factory = sqlite3.Row
+        tables = _list_tables(connection)
+        try:
+            _health_data, metadata = _load_latest_monitoring_health_data_with_metadata(
+                connection,
+                tables,
+                start_date=start_date,
+                db_file=monitoring_path,
+            )
+        except GarminDBImportError:
+            return metrics, tables
+
+    metrics["hrv_status"] = metadata["metrics"]["hrv_status"]
+    metrics["resting_hr"] = metadata["metrics"]["resting_hr"]
+    return metrics, tables
+
+
+def _read_garmin_metrics(garmin_path, start_date=None):
+    metrics = {
+        "sleep_hours": _metric_table_not_found(garmin_path, "sleep", "total_sleep"),
+        "stress": _metric_table_not_found(garmin_path, "stress", "stress"),
+        "resting_hr": _metric_table_not_found(
+            garmin_path,
+            "resting_hr",
+            "resting_heart_rate",
+        ),
+        "hrv_status": _metric_table_not_found(garmin_path, "hrv", "status"),
+    }
+    tables = []
+    if not garmin_path.exists():
+        return metrics, tables
+
+    with sqlite3.connect(garmin_path) as connection:
+        connection.row_factory = sqlite3.Row
+        tables = _list_tables(connection)
+        metrics["sleep_hours"] = _latest_sleep_metric(
+            connection,
+            garmin_path,
+            start_date=start_date,
+        )
+        metrics["stress"] = _latest_stress_metric(
+            connection,
+            garmin_path,
+            start_date=start_date,
+        )
+        metrics["resting_hr"] = _latest_resting_hr_metric_from_garmin(
+            connection,
+            garmin_path,
+            start_date=start_date,
+        )
+        metrics["hrv_status"] = _latest_hrv_metric_from_garmin(
+            connection,
+            garmin_path,
+            start_date=start_date,
+        )
+
+    return metrics, tables
+
+
+def _source_date_from_metrics(metrics):
+    dates = [
+        metric.get("date")
+        for metric in metrics.values()
+        if metric.get("value") and metric.get("date")
+    ]
+    return max(dates) if dates else ""
+
+
+def load_latest_health_data_from_directory(db_dir=None, user_profile=None):
+    directory = resolve_garmindb_dir(db_dir)
+    start_date = _resolve_garmin_start_date(user_profile)
+    monitoring_path = directory / "garmin_monitoring.db"
+    garmin_path = directory / "garmin.db"
+
+    monitoring_metrics, monitoring_tables = _read_monitoring_metrics(
+        monitoring_path,
+        start_date=start_date,
+    )
+    garmin_metrics, garmin_tables = _read_garmin_metrics(
+        garmin_path,
+        start_date=start_date,
+    )
+
+    metrics = _empty_metrics()
+    metrics["hrv_status"] = monitoring_metrics["hrv_status"]
+    if not metrics["hrv_status"].get("value") and garmin_metrics["hrv_status"].get(
+        "value"
+    ):
+        metrics["hrv_status"] = garmin_metrics["hrv_status"]
+
+    metrics["resting_hr"] = monitoring_metrics["resting_hr"]
+    if not metrics["resting_hr"].get("value") and garmin_metrics["resting_hr"].get(
+        "value"
+    ):
+        metrics["resting_hr"] = garmin_metrics["resting_hr"]
+
+    metrics["sleep_hours"] = garmin_metrics["sleep_hours"]
+    metrics["stress"] = garmin_metrics["stress"]
+    metrics["body_battery"] = _metric_table_not_found(
+        garmin_path,
+        "body_battery",
+        "body_battery",
+    )
+
+    source_date = _source_date_from_metrics(metrics)
+    if not source_date:
+        raise GarminDBImportError("No valid GarminDB health data found.")
+
+    health_data = HealthData(
+        date=source_date,
+        sleep_hours=metrics["sleep_hours"]["value"],
+        hrv_status=metrics["hrv_status"]["value"],
+        body_battery_or_energy=metrics["body_battery"]["value"],
+        resting_hr=metrics["resting_hr"]["value"],
+        stress=metrics["stress"]["value"],
+        source="garmindb",
+    )
+
+    return health_data, {
+        "schema": "directory",
+        "db_dir": str(directory),
+        "db_files": {
+            "garmin_monitoring.db": str(monitoring_path),
+            "garmin.db": str(garmin_path),
+        },
+        "tables_by_db": {
+            "garmin_monitoring.db": monitoring_tables,
+            "garmin.db": garmin_tables,
+        },
+        "source_date": source_date,
+        "metrics": metrics,
+    }
+
+
+def _daily_summary_metadata(row, mapping, table_name, tables, health_data, db_file=""):
     date_column = mapping["date"]["column"]
     source_date = health_data.date
     metrics = {
         "sleep_hours": _metric_metadata(
             value=health_data.sleep_hours,
             date=source_date,
+            db_file=db_file,
             table=table_name,
             column=mapping["sleep_hours"]["column"],
             timestamp=row.get(date_column) or "",
@@ -528,6 +915,7 @@ def _daily_summary_metadata(row, mapping, table_name, tables, health_data):
         "hrv_status": _metric_metadata(
             value=health_data.hrv_status,
             date=source_date,
+            db_file=db_file,
             table=table_name,
             column=mapping["hrv_status"]["column"],
             timestamp=row.get(date_column) or "",
@@ -536,6 +924,7 @@ def _daily_summary_metadata(row, mapping, table_name, tables, health_data):
         "resting_hr": _metric_metadata(
             value=health_data.resting_hr,
             date=source_date,
+            db_file=db_file,
             table=table_name,
             column=mapping["resting_hr"]["column"],
             timestamp=row.get(date_column) or "",
@@ -544,6 +933,7 @@ def _daily_summary_metadata(row, mapping, table_name, tables, health_data):
         "body_battery": _metric_metadata(
             value=health_data.body_battery_or_energy,
             date=source_date,
+            db_file=db_file,
             table=table_name,
             column=mapping["body_battery"]["column"],
             timestamp=row.get(date_column) or "",
@@ -556,6 +946,7 @@ def _daily_summary_metadata(row, mapping, table_name, tables, health_data):
         metrics["stress"] = _metric_metadata(
             value=health_data.stress,
             date=source_date if health_data.stress else "",
+            db_file=db_file,
             table=table_name,
             column=stress_column,
             timestamp=row.get(date_column) or "",
@@ -564,19 +955,27 @@ def _daily_summary_metadata(row, mapping, table_name, tables, health_data):
         )
     else:
         metrics["stress"] = _metric_metadata(
+            db_file=db_file,
             table=table_name,
             reason="column not found",
         )
 
     return {
         "schema": "daily_summary",
+        "db_file": str(db_file) if db_file else "",
         "tables": tables,
         "source_date": source_date,
         "metrics": metrics,
     }
 
 
-def load_latest_health_data_with_metadata(db_path=None, user_profile=None):
+def load_latest_health_data_with_metadata(db_path=None, db_dir=None, user_profile=None):
+    if db_dir is not None:
+        return load_latest_health_data_from_directory(
+            db_dir=db_dir,
+            user_profile=user_profile,
+        )
+
     path = resolve_garmindb_path(db_path)
     start_date = _resolve_garmin_start_date(user_profile)
 
@@ -589,9 +988,10 @@ def load_latest_health_data_with_metadata(db_path=None, user_profile=None):
             except GarminDBImportError:
                 return _load_latest_monitoring_health_data_with_metadata(
                     connection,
-                    tables,
-                    start_date=start_date,
-                )
+                tables,
+                start_date=start_date,
+                db_file=path,
+            )
 
             columns = _list_columns(connection, table_name)
             mapping = _build_column_mapping(columns)
@@ -611,6 +1011,7 @@ def load_latest_health_data_with_metadata(db_path=None, user_profile=None):
                 table_name,
                 tables,
                 health_data,
+                db_file=path,
             )
             return health_data, metadata
         except ValueError as error:
@@ -619,9 +1020,10 @@ def load_latest_health_data_with_metadata(db_path=None, user_profile=None):
     raise GarminDBImportError("No valid GarminDB health data found.")
 
 
-def load_latest_health_data(db_path=None, user_profile=None):
+def load_latest_health_data(db_path=None, db_dir=None, user_profile=None):
     health_data, _metadata = load_latest_health_data_with_metadata(
         db_path,
+        db_dir=db_dir,
         user_profile=user_profile,
     )
     return health_data

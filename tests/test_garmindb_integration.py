@@ -354,3 +354,142 @@ def test_garmindb_latest_health_data_uses_latest_available_hrv(tmp_path):
     assert health_data.date == "2026-05-07"
     assert health_data.hrv_status == "low"
     assert health_data.resting_hr == "58"
+
+
+def _create_garmin_db(path):
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE sleep (
+                day DATETIME NOT NULL PRIMARY KEY,
+                total_sleep TIME NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE stress (
+                timestamp DATETIME NOT NULL PRIMARY KEY,
+                stress INTEGER NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE resting_hr (
+                day DATETIME NOT NULL PRIMARY KEY,
+                resting_heart_rate FLOAT
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE hrv (
+                day DATETIME NOT NULL PRIMARY KEY,
+                last_night_avg INTEGER,
+                status VARCHAR
+            )
+            """
+        )
+        connection.execute(
+            "INSERT INTO sleep (day, total_sleep) VALUES (?, ?)",
+            ("2026-05-07 00:00:00", "07:30:00.000000"),
+        )
+        connection.execute(
+            "INSERT INTO stress (timestamp, stress) VALUES (?, ?)",
+            ("2026-05-07 16:00:00", 42),
+        )
+        connection.execute(
+            "INSERT INTO resting_hr (day, resting_heart_rate) VALUES (?, ?)",
+            ("2026-05-07 00:00:00", 62.0),
+        )
+        connection.execute(
+            "INSERT INTO hrv (day, last_night_avg, status) VALUES (?, ?, ?)",
+            ("2026-05-07 00:00:00", 31, "low"),
+        )
+
+
+def _create_monitoring_db(path, include_hr=True):
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE monitoring_hrv_status (
+                timestamp DATETIME NOT NULL,
+                weekly_average FLOAT,
+                last_night FLOAT,
+                last_night_average FLOAT,
+                baseline_low FLOAT,
+                baseline_high FLOAT,
+                status INTEGER,
+                reading_count INTEGER,
+                PRIMARY KEY (timestamp)
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO monitoring_hrv_status (
+                timestamp,
+                weekly_average,
+                last_night,
+                last_night_average,
+                baseline_low,
+                baseline_high,
+                status,
+                reading_count
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("2026-05-06 23:00:00", 34, 48, 48, 35, 39, 2, 10),
+        )
+        if include_hr:
+            connection.execute(
+                """
+                CREATE TABLE monitoring_hr (
+                    timestamp DATETIME NOT NULL,
+                    heart_rate INTEGER NOT NULL,
+                    PRIMARY KEY (timestamp)
+                )
+                """
+            )
+            connection.executemany(
+                "INSERT INTO monitoring_hr (timestamp, heart_rate) VALUES (?, ?)",
+                [
+                    ("2026-05-07 01:00:00", 70),
+                    ("2026-05-07 02:00:00", 54),
+                ],
+            )
+
+
+def test_garmindb_latest_directory_combines_monitoring_and_garmin_db(tmp_path):
+    db_dir = tmp_path / "DBs"
+    db_dir.mkdir()
+    _create_monitoring_db(db_dir / "garmin_monitoring.db")
+    _create_garmin_db(db_dir / "garmin.db")
+
+    health_data, metadata = load_latest_health_data_with_metadata(db_dir=db_dir)
+
+    assert health_data.date == "2026-05-07"
+    assert health_data.sleep_hours == "7.5"
+    assert health_data.hrv_status == "unbalanced"
+    assert health_data.resting_hr == "54"
+    assert health_data.stress == "42"
+    assert metadata["schema"] == "directory"
+    assert metadata["metrics"]["sleep_hours"]["db_file"].endswith("garmin.db")
+    assert metadata["metrics"]["hrv_status"]["db_file"].endswith(
+        "garmin_monitoring.db"
+    )
+    assert metadata["metrics"]["resting_hr"]["table"] == "monitoring_hr"
+    assert metadata["metrics"]["body_battery"]["reason"] == "table not found"
+
+
+def test_garmindb_latest_directory_falls_back_to_garmin_resting_hr(tmp_path):
+    db_dir = tmp_path / "DBs"
+    db_dir.mkdir()
+    _create_monitoring_db(db_dir / "garmin_monitoring.db", include_hr=False)
+    _create_garmin_db(db_dir / "garmin.db")
+
+    health_data, metadata = load_latest_health_data_with_metadata(db_dir=db_dir)
+
+    assert health_data.resting_hr == "62"
+    assert metadata["metrics"]["resting_hr"]["table"] == "resting_hr"
