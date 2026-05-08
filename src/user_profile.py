@@ -6,6 +6,9 @@ DEFAULT_USER_PROFILE = {
     "preferred_activities": ["weight_training", "walking", "cycling"],
     "disliked_activities": ["hiit"],
     "training_goal": "general_fitness",
+    "garmin_start_date": "",
+    "apple_watch_start_date": "",
+    "samsung_health_start_date": "",
     "available_days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
     "max_training_days_per_week": 4,
     "weekly_training_minutes_baseline": 240,
@@ -64,6 +67,11 @@ def load_user_profile(profile_path=DEFAULT_PROFILE_PATH):
     profile["weekly_structure"] = dict(profile.get("weekly_structure") or {})
     profile["planned_workouts"] = dict(profile.get("planned_workouts") or {})
     profile["training_goal"] = profile.get("training_goal") or "general_fitness"
+    profile["garmin_start_date"] = profile.get("garmin_start_date") or ""
+    profile["apple_watch_start_date"] = profile.get("apple_watch_start_date") or ""
+    profile["samsung_health_start_date"] = (
+        profile.get("samsung_health_start_date") or ""
+    )
     profile["preferred_training_time"] = (
         profile.get("preferred_training_time") or "evening"
     )

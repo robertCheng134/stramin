@@ -130,7 +130,37 @@ def _build_column_mapping(columns):
     return mapping
 
 
-def _select_rows(connection, table_name, mapping):
+def _validate_start_date(value):
+    date_text = str(value or "").strip()
+    if not date_text:
+        return None
+
+    try:
+        datetime.strptime(date_text, "%Y-%m-%d")
+    except ValueError:
+        logger.warning(
+            "Invalid garmin_start_date '%s'. GarminDB import will not filter by start date.",
+            value,
+        )
+        return None
+
+    return date_text
+
+
+def _resolve_garmin_start_date(user_profile=None):
+    if user_profile is None:
+        try:
+            from user_profile import load_user_profile
+
+            user_profile = load_user_profile()
+        except Exception as error:
+            logger.warning("Unable to load user profile for GarminDB import: %s", error)
+            return None
+
+    return _validate_start_date((user_profile or {}).get("garmin_start_date"))
+
+
+def _select_rows(connection, table_name, mapping, start_date=None):
     selected_columns = {
         details["column"]
         for details in mapping.values()
@@ -138,8 +168,13 @@ def _select_rows(connection, table_name, mapping):
     }
     quoted_columns = ", ".join(f'"{column}"' for column in selected_columns)
     date_column = mapping["date"]["column"]
-    query = f'SELECT {quoted_columns} FROM "{table_name}" ORDER BY "{date_column}"'
-    cursor = connection.execute(query)
+    query = f'SELECT {quoted_columns} FROM "{table_name}"'
+    params = ()
+    if start_date:
+        query += f' WHERE "{date_column}" >= ?'
+        params = (start_date,)
+    query += f' ORDER BY "{date_column}"'
+    cursor = connection.execute(query, params)
     return [dict(row) for row in cursor.fetchall()]
 
 
@@ -244,8 +279,9 @@ def _convert_row(row, mapping):
     )
 
 
-def load_health_data(db_path=None):
+def load_health_data(db_path=None, user_profile=None):
     path = resolve_garmindb_path(db_path)
+    start_date = _resolve_garmin_start_date(user_profile)
 
     try:
         with sqlite3.connect(path) as connection:
@@ -253,7 +289,7 @@ def load_health_data(db_path=None):
             table_name = _find_supported_table(connection)
             columns = _list_columns(connection, table_name)
             mapping = _build_column_mapping(columns)
-            rows = _select_rows(connection, table_name, mapping)
+            rows = _select_rows(connection, table_name, mapping, start_date=start_date)
     except sqlite3.Error as error:
         raise GarminDBImportError(f"Unable to read GarminDB database: {error}") from error
 
@@ -273,5 +309,8 @@ def load_health_data(db_path=None):
     return health_data
 
 
-def load_health_rows(db_path=None):
-    return [health_data.to_legacy_dict() for health_data in load_health_data(db_path)]
+def load_health_rows(db_path=None, user_profile=None):
+    return [
+        health_data.to_legacy_dict()
+        for health_data in load_health_data(db_path, user_profile=user_profile)
+    ]

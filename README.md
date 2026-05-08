@@ -229,6 +229,9 @@ Example:
   "preferred_activities": ["weight_training", "walking", "cycling"],
   "disliked_activities": ["hiit"],
   "training_goal": "general_fitness",
+  "garmin_start_date": "2026-05-01",
+  "apple_watch_start_date": "2026-05-01",
+  "samsung_health_start_date": "",
   "weekly_training_minutes_baseline": 240,
   "high_load_multiplier": 1.3,
   "overreaching_3day_minutes_threshold": 180,
@@ -259,6 +262,12 @@ Example:
   "session_duration_minutes": 60
 }
 ```
+
+Device start dates are optional and use `YYYY-MM-DD` format. They prevent future
+health imports from scanning or importing data before you actually started using
+that platform. GarminDB uses `garmin_start_date` when it is present and valid.
+If a start date is missing or invalid, stramin keeps the previous import behavior
+and continues without crashing.
 
 ## Weekly Planner and Dynamic Adaptation
 

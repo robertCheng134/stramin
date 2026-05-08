@@ -149,3 +149,39 @@ def test_garmindb_adapter_skips_invalid_rows(tmp_path):
 
     assert len(health_data) == 1
     assert health_data[0].date == "2026-05-07"
+
+
+def test_garmindb_adapter_filters_before_garmin_start_date(tmp_path):
+    db_path = tmp_path / "garmin.db"
+    _create_daily_summary_db(
+        db_path,
+        [
+            ("2026-04-30", 450, "balanced", 72, 55, 25),
+            ("2026-05-07", 420, "balanced", 62, 58, 30),
+        ],
+    )
+
+    health_data = load_health_data(
+        db_path,
+        user_profile={"garmin_start_date": "2026-05-01"},
+    )
+
+    assert [row.date for row in health_data] == ["2026-05-07"]
+
+
+def test_garmindb_adapter_ignores_invalid_garmin_start_date(tmp_path):
+    db_path = tmp_path / "garmin.db"
+    _create_daily_summary_db(
+        db_path,
+        [
+            ("2026-04-30", 450, "balanced", 72, 55, 25),
+            ("2026-05-07", 420, "balanced", 62, 58, 30),
+        ],
+    )
+
+    health_data = load_health_data(
+        db_path,
+        user_profile={"garmin_start_date": "not-a-date"},
+    )
+
+    assert [row.date for row in health_data] == ["2026-04-30", "2026-05-07"]
