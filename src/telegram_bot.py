@@ -116,6 +116,11 @@ def format_garmindb_today_response(preview):
     recovery_date = metadata.get("source_date", health_data.date)
     freshness_message = _freshness_message(recovery_date)
     freshness_section = f"{freshness_message}\n" if freshness_message else ""
+    stress_section = (
+        f"stress={health_data.stress}\n"
+        if health_data.stress not in (None, "")
+        else ""
+    )
 
     return (
         "Today Recommendation\n\n"
@@ -126,7 +131,7 @@ def format_garmindb_today_response(preview):
         f"hrv_5min_high={hrv_metric.get('hrv_5min_high', '')}\n"
         f"hrv_balance={_user_facing_hrv_balance(hrv_metric)}\n"
         f"resting_hr={health_data.resting_hr}\n"
-        f"stress={health_data.stress}\n"
+        f"{stress_section}"
         f"recommendation={preview['recommendation']}\n"
         f"rationale={preview['rationale']}"
     )

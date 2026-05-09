@@ -724,20 +724,50 @@ def _latest_stress_metric(connection, db_file, start_date=None):
     if "stress" not in columns:
         return _metric_column_not_found(db_file, "stress", "stress")
 
-    query = 'SELECT timestamp, stress FROM stress'
+    latest_query = 'SELECT timestamp, stress FROM stress'
     params = ()
     if start_date:
-        query += ' WHERE date(timestamp) >= ?'
+        latest_query += ' WHERE date(timestamp) >= ?'
         params = (start_date,)
-    query += ' ORDER BY timestamp DESC LIMIT 1'
-    row = _fetch_one(connection, query, params)
-    if not row:
+    latest_query += ' ORDER BY timestamp DESC LIMIT 1'
+    latest_row = _fetch_one(connection, latest_query, params)
+    if not latest_row:
         return _metric_no_recent_rows(db_file, "stress", "stress")
 
-    try:
-        stress = _normalize_optional_int(row.get("stress"), 0, 100, "stress")
-    except ValueError:
-        stress = ""
+    valid_query = 'SELECT timestamp, stress FROM stress WHERE stress >= 0'
+    valid_params = ()
+    if start_date:
+        valid_query += ' AND date(timestamp) >= ?'
+        valid_params = (start_date,)
+    valid_query += ' ORDER BY timestamp DESC LIMIT 1'
+    row = _fetch_one(connection, valid_query, valid_params)
+
+    skipped_query = 'SELECT count(*) AS invalid_rows_skipped FROM stress WHERE stress < 0'
+    skipped_params = ()
+    if row:
+        skipped_query += ' AND timestamp > ?'
+        skipped_params = (row.get("timestamp"),)
+    elif start_date:
+        skipped_query += ' AND date(timestamp) >= ?'
+        skipped_params = (start_date,)
+    skipped_row = _fetch_one(connection, skipped_query, skipped_params)
+    invalid_rows_skipped = (skipped_row or {}).get("invalid_rows_skipped") or 0
+
+    if not row:
+        return _metric_metadata(
+            db_file=db_file,
+            table="stress",
+            column="stress",
+            timestamp=latest_row.get("timestamp") or "",
+            raw_value=latest_row.get("stress") if latest_row.get("stress") is not None else "",
+            selected_value="",
+            invalid_rows_skipped=invalid_rows_skipped,
+            reason="no recent rows",
+            semantic_source="stress_sample",
+            source_priority="primary",
+        )
+
+    stress = _normalize_optional_int(row.get("stress"), 0, 100, "stress")
     return _metric_metadata(
         value=stress,
         date=_date_from_timestamp(row.get("timestamp")),
@@ -745,7 +775,9 @@ def _latest_stress_metric(connection, db_file, start_date=None):
         table="stress",
         column="stress",
         timestamp=row.get("timestamp") or "",
-        raw_value=row.get("stress") or "",
+        raw_value=latest_row.get("stress") if latest_row.get("stress") is not None else "",
+        selected_value=stress,
+        invalid_rows_skipped=invalid_rows_skipped,
         reason="" if stress else "no recent rows",
         semantic_source="stress_sample",
         source_priority="primary",

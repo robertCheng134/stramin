@@ -121,7 +121,8 @@ def print_preview(preview):
     print(f"hrv_5min_high={hrv_metric.get('hrv_5min_high', '')}")
     print(f"hrv_balance={_user_facing_hrv_balance(hrv_metric)}")
     print(f"resting_hr={health_data.resting_hr}")
-    print(f"stress={health_data.stress}")
+    if health_data.stress not in (None, ""):
+        print(f"stress={health_data.stress}")
     print(f"recovery_score={preview['recovery_result'].get('recovery_score')}")
     print(f"recovery_level={preview['recovery_result'].get('recovery_level')}")
     print(f"recommendation={preview['recommendation']}")

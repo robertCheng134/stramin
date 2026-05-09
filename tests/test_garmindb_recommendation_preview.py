@@ -125,3 +125,22 @@ def test_print_preview_outputs_required_fields(tmp_path, capsys):
     assert "stress=42" in output
     assert "recommendation=" in output
     assert "rationale=" in output
+
+
+def test_print_preview_omits_empty_stress(tmp_path, capsys):
+    db_dir = tmp_path / "DBs"
+    db_dir.mkdir()
+    _create_garmin_db(db_dir / "garmin.db")
+    with sqlite3.connect(db_dir / "garmin.db") as connection:
+        connection.execute("DELETE FROM stress")
+        connection.execute(
+            "INSERT INTO stress (timestamp, stress) VALUES (?, ?)",
+            ("2026-05-08 16:00:00", -2),
+        )
+
+    preview = preview_script.build_recommendation_preview(db_dir)
+    preview_script.print_preview(preview)
+
+    output = capsys.readouterr().out
+    assert preview["health_data"].stress == ""
+    assert "stress=" not in output

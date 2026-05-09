@@ -529,6 +529,9 @@ def test_garmindb_latest_directory_combines_monitoring_and_garmin_db(tmp_path):
         == "possible_under_recovery"
     )
     assert "below your baseline" in metadata["metrics"]["hrv_status"]["hrv_message"]
+    assert metadata["metrics"]["stress"]["raw_value"] == 42
+    assert metadata["metrics"]["stress"]["selected_value"] == "42"
+    assert metadata["metrics"]["stress"]["invalid_rows_skipped"] == 0
 
 
 def test_garmindb_latest_directory_falls_back_to_garmin_resting_hr(tmp_path):
@@ -541,6 +544,45 @@ def test_garmindb_latest_directory_falls_back_to_garmin_resting_hr(tmp_path):
 
     assert health_data.resting_hr == "62"
     assert metadata["metrics"]["resting_hr"]["table"] == "resting_hr"
+
+
+def test_garmindb_stress_skips_latest_negative_value(tmp_path):
+    db_dir = tmp_path / "DBs"
+    db_dir.mkdir()
+    _create_garmin_db(db_dir / "garmin.db")
+    with sqlite3.connect(db_dir / "garmin.db") as connection:
+        connection.execute(
+            "INSERT INTO stress (timestamp, stress) VALUES (?, ?)",
+            ("2026-05-08 16:00:00", -2),
+        )
+
+    health_data, metadata = load_latest_health_data_with_metadata(db_dir=db_dir)
+
+    assert health_data.stress == "42"
+    assert metadata["metrics"]["stress"]["raw_value"] == -2
+    assert metadata["metrics"]["stress"]["selected_value"] == "42"
+    assert metadata["metrics"]["stress"]["invalid_rows_skipped"] == 1
+    assert metadata["metrics"]["stress"]["reason"] == ""
+
+
+def test_garmindb_stress_reports_no_recent_rows_when_all_values_invalid(tmp_path):
+    db_dir = tmp_path / "DBs"
+    db_dir.mkdir()
+    _create_garmin_db(db_dir / "garmin.db")
+    with sqlite3.connect(db_dir / "garmin.db") as connection:
+        connection.execute("DELETE FROM stress")
+        connection.execute(
+            "INSERT INTO stress (timestamp, stress) VALUES (?, ?)",
+            ("2026-05-08 16:00:00", -2),
+        )
+
+    health_data, metadata = load_latest_health_data_with_metadata(db_dir=db_dir)
+
+    assert health_data.stress == ""
+    assert metadata["metrics"]["stress"]["raw_value"] == -2
+    assert metadata["metrics"]["stress"]["selected_value"] == ""
+    assert metadata["metrics"]["stress"]["invalid_rows_skipped"] == 1
+    assert metadata["metrics"]["stress"]["reason"] == "no recent rows"
 
 
 def test_garmindb_latest_directory_falls_back_to_monitoring_hr(tmp_path):

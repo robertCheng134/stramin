@@ -92,6 +92,8 @@ def _print_debug(metadata, db_path):
         print(f"  source_priority={metric.get('source_priority', '')}")
         print(f"  latest_timestamp={metric.get('timestamp', '')}")
         print(f"  raw_value={metric.get('raw_value', '')}")
+        print(f"  selected_value={metric.get('selected_value', '')}")
+        print(f"  invalid_rows_skipped={metric.get('invalid_rows_skipped', '')}")
         print(f"  reason={metric.get('reason', '')}")
         if name == "hrv_status":
             for field in [
