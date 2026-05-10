@@ -8,6 +8,7 @@ from integrations.garmindb import GarminDBImportError, load_latest_health_data_w
 
 
 REQUIRED_TABLES = ["hrv", "sleep", "stress", "daily_summary"]
+REQUIRED_NON_EMPTY_TABLES = ["hrv", "sleep", "daily_summary"]
 
 
 def _table_count(db_path, table):
@@ -16,33 +17,49 @@ def _table_count(db_path, table):
         return cursor.fetchone()[0]
 
 
+def _fail_validation(logger, message):
+    full_message = f"GarminDB validation failed: {message}"
+    logger.error(full_message)
+    raise GarminDBImportError(full_message)
+
+
 def validate_garmindb(db_dir=DEFAULT_DB_DIR, allow_stale=False, log_dir=DEFAULT_LOG_DIR):
-    logger = get_file_logger("validation", log_dir)
+    logger = get_file_logger("pipeline", log_dir)
     db_dir = Path(db_dir).expanduser()
     garmin_db = db_dir / "garmin.db"
 
     if not garmin_db.exists():
-        raise GarminDBImportError(f"Missing GarminDB database: {garmin_db}")
+        _fail_validation(logger, f"missing GarminDB database at {garmin_db}")
 
     table_counts = {}
     for table in REQUIRED_TABLES:
         try:
             table_counts[table] = _table_count(garmin_db, table)
         except sqlite3.Error as error:
-            raise GarminDBImportError(f"Failed to validate table {table}: {error}") from error
+            _fail_validation(logger, f"table {table} is missing or unreadable: {error}")
+
+    for table in REQUIRED_NON_EMPTY_TABLES:
+        if table_counts.get(table, 0) <= 0:
+            _fail_validation(logger, f"table {table} is empty")
 
     health_data, metadata = load_latest_health_data_with_metadata(db_dir=db_dir)
     latest_date = metadata.get("source_date") or health_data.date
-    is_stale = latest_date != today_iso()
+    current_date = today_iso()
+    is_stale = latest_date != current_date
 
     if is_stale and not allow_stale:
-        raise GarminDBImportError(
-            f"Stale GarminDB data: latest recovery date is {latest_date}"
+        _fail_validation(
+            logger,
+            (
+                f"latest recovery date {latest_date} is stale; "
+                f"current date is {current_date}"
+            ),
         )
 
     result = {
         "status": "ready",
         "db_dir": str(db_dir),
+        "validated_at": current_date,
         "latest_recovery_date": latest_date,
         "is_stale": is_stale,
         "table_counts": table_counts,
@@ -77,4 +94,3 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

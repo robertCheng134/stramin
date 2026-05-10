@@ -11,7 +11,7 @@ def sync_garmindb(log_dir=DEFAULT_LOG_DIR):
     """
 
     ensure_log_dir(log_dir)
-    logger = get_file_logger("garmindb-sync", log_dir)
+    logger = get_file_logger("pipeline", log_dir)
     logger.info("GarminDB sync step started")
     logger.info("GarminDB sync is manual in v4; no sync command was executed")
 
@@ -40,4 +40,3 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

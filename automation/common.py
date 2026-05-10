@@ -11,6 +11,9 @@ DEFAULT_DB_DIR = Path("~/HealthData/DBs").expanduser()
 DEFAULT_LOG_DIR = ROOT_DIR / "logs"
 DEFAULT_STATE_PATH = ROOT_DIR / "daily_state.json"
 
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
@@ -55,4 +58,3 @@ def write_json_atomic(path, data):
         state_file.write("\n")
     temp_path.replace(target)
     return target
-

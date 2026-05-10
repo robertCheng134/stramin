@@ -11,29 +11,36 @@ def _metric(metadata, name):
 
 
 def build_daily_state(db_dir=DEFAULT_DB_DIR, output=DEFAULT_STATE_PATH, log_dir=DEFAULT_LOG_DIR):
-    logger = get_file_logger("daily-state", log_dir)
+    logger = get_file_logger("pipeline", log_dir)
     preview = build_recommendation_preview(db_dir)
     health_data = preview["health_data"]
     metadata = preview["metadata"]
     hrv_metric = _metric(metadata, "hrv_status")
+    latest_recovery_date = metadata.get("source_date", health_data.date)
 
     state = {
         "generated_at": now_iso(),
-        "latest_recovery_date": metadata.get("source_date", health_data.date),
+        "date": latest_recovery_date,
+        "latest_recovery_date": latest_recovery_date,
         "validation_status": "ready",
-        "metrics": {
-            "sleep_hours": health_data.sleep_hours,
+        "hrv": {
+            "status": health_data.hrv_status,
             "hrv_value": hrv_metric.get("hrv_value", ""),
             "hrv_5min_high": hrv_metric.get("hrv_5min_high", ""),
+            "hrv_unit": hrv_metric.get("hrv_unit", "ms"),
             "hrv_balance": hrv_metric.get("hrv_balance", ""),
-            "resting_hr": health_data.resting_hr,
-            "stress": health_data.stress,
+            "hrv_risk": hrv_metric.get("hrv_risk", ""),
+            "hrv_message": hrv_metric.get("hrv_message", ""),
         },
-        "recovery": preview["recovery_result"],
+        "sleep_hours": health_data.sleep_hours,
+        "stress": health_data.stress,
+        "recovery_state": preview["recovery_result"],
         "decision": preview["decision"],
         "recommendation": preview["recommendation"],
         "rationale": preview["rationale"],
     }
+    if health_data.resting_hr not in (None, ""):
+        state["resting_hr"] = health_data.resting_hr
 
     path = write_json_atomic(output, state)
     logger.info("Daily state written atomically: %s", path)
@@ -61,4 +68,3 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
