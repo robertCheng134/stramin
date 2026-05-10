@@ -64,6 +64,14 @@ sqlite3 ~/HealthData/DBs/garmin.db "select count(*) from stress;"
 sqlite3 ~/HealthData/DBs/garmin.db "select count(*) from daily_summary;"
 ```
 
+Verified latest-data checks:
+
+```bash
+sqlite3 ~/HealthData/DBs/garmin.db "select day, last_night_avg, status from hrv order by day desc limit 1;"
+sqlite3 ~/HealthData/DBs/garmin.db "select day, total_sleep from sleep order by day desc limit 1;"
+sqlite3 ~/HealthData/DBs/garmin.db "select day, rhr, stress_avg, bb_charged from daily_summary order by day desc limit 1;"
+```
+
 Inspect Stramin interpretation:
 
 ```bash
@@ -88,22 +96,33 @@ Negative stress values are invalid/unclassified and are skipped.
 
 ## Production Freshness Findings
 
-GarminDB raw tables such as `hrv` and `sleep` can contain inconsistent
-historical ordering and stale-looking rows after sync. They are useful for
-debugging and same-day enrichment, but they are not reliable enough to decide
-whether a production daily recommendation is ready.
+Production verification confirmed that GarminDB raw tables such as `hrv` and
+`sleep` are usable. The important rule is to never order GarminDB health tables
+by `rowid`. After GarminDB bulk import/analyze, `rowid` does not represent
+chronological order and can make fresh data look stale.
+
+Always order by the business date column:
+
+- `hrv.day`
+- `sleep.day`
+- `daily_summary.day`
 
 For v4 production stability, Stramin treats `daily_summary` as the primary
 recovery source and validates freshness from `daily_summary.day`. Summary rows
-are preferred because they represent Garmin's finalized daily view and avoid
-raw-table ordering quirks.
+are preferred because they represent Garmin's finalized daily view.
 
 Operational rule:
 
 - trust `daily_summary.day` for readiness/freshness
 - prefer summary columns for recovery metrics where available
-- use raw `sleep` and `hrv` only as supplemental same-day details
+- use raw `sleep` and `hrv` when needed, ordered by `day desc`
+- never use `rowid` as a proxy for latest health data
 - do not send a Telegram recommendation when `daily_summary.day` is stale
+
+Garmin finalized recovery data can naturally lag by one day. If the latest
+finalized recovery date is yesterday, that is normal and accepted by v4
+validation. Data older than yesterday is treated as too stale for automatic
+recommendations.
 
 ## Privacy
 

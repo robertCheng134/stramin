@@ -1,11 +1,14 @@
+from datetime import date, timedelta
+
 from reports.telegram_report import format_daily_telegram_report
 from reports.telegram_report import format_warning_telegram_report
 
 
 def test_daily_telegram_report_includes_key_fields():
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
     message = format_daily_telegram_report(
         {
-            "latest_recovery_date": "2026-05-09",
+            "latest_recovery_date": yesterday,
             "sleep_hours": "7.04",
             "hrv": {
                 "hrv_value": "41.7",
@@ -25,8 +28,8 @@ def test_daily_telegram_report_includes_key_fields():
     )
 
     assert "🌅 Stramin Daily Recovery" in message
-    assert "Recovery date: 2026-05-09" in message
-    assert "Latest finalized Garmin recovery data is from 2026-05-09." in message
+    assert f"Recovery date: {yesterday}" in message
+    assert f"Latest finalized Garmin recovery data is from {yesterday}." in message
     assert "Sleep: 7.0h" in message
     assert "HRV: 42 ms" in message
     assert "Stress: 20" in message

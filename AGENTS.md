@@ -150,6 +150,28 @@ TypeError: argument of type 'NoneType' is not iterable
 
 Use `tmux` for sync jobs. Do not hide GarminDB failures behind silent retries.
 
+Raw table ordering rule:
+
+- GarminDB raw tables `hrv` and `sleep` are usable.
+- Do not order GarminDB health tables by `rowid`.
+- `rowid` does not represent chronological order after bulk import/analyze.
+- Always order by the business date column:
+  - `hrv.day`
+  - `sleep.day`
+  - `daily_summary.day`
+
+Verified latest-data query examples:
+
+```bash
+sqlite3 ~/HealthData/DBs/garmin.db "select day, last_night_avg, status from hrv order by day desc limit 1;"
+sqlite3 ~/HealthData/DBs/garmin.db "select day, total_sleep from sleep order by day desc limit 1;"
+sqlite3 ~/HealthData/DBs/garmin.db "select day, rhr, stress_avg, bb_charged from daily_summary order by day desc limit 1;"
+```
+
+Latest finalized Garmin recovery data can be yesterday. This is normal and is
+accepted by v4 validation; older data should be treated as too stale for
+automatic recommendations.
+
 ## tmux Workflow
 
 ```bash
