@@ -615,6 +615,83 @@ def test_garmindb_latest_directory_falls_back_to_monitoring_hr(tmp_path):
     assert metadata["metrics"]["resting_hr"]["source_priority"] == "fallback"
 
 
+def test_garmindb_latest_directory_prefers_daily_summary_over_stale_raw_tables(tmp_path):
+    db_dir = tmp_path / "DBs"
+    db_dir.mkdir()
+    db_path = db_dir / "garmin.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE daily_summary (
+                day DATETIME NOT NULL PRIMARY KEY,
+                rhr INTEGER,
+                stress_avg INTEGER,
+                bb_charged INTEGER,
+                bb_min INTEGER,
+                bb_max INTEGER,
+                rr_waking_avg FLOAT
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE sleep (
+                day DATETIME NOT NULL PRIMARY KEY,
+                total_sleep TIME NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE hrv (
+                day DATETIME NOT NULL PRIMARY KEY,
+                last_night_avg INTEGER,
+                status VARCHAR
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO daily_summary (
+                day,
+                rhr,
+                stress_avg,
+                bb_charged,
+                bb_min,
+                bb_max,
+                rr_waking_avg
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("2026-05-10 00:00:00", 59, 24, 63, 35, 72, 14.1),
+        )
+        connection.execute(
+            "INSERT INTO sleep (day, total_sleep) VALUES (?, ?)",
+            ("2026-05-01 00:00:00", "07:30:00.000000"),
+        )
+        connection.execute(
+            "INSERT INTO hrv (day, last_night_avg, status) VALUES (?, ?, ?)",
+            ("2026-05-01 00:00:00", 22, "low"),
+        )
+
+    health_data, metadata = load_latest_health_data_with_metadata(db_dir=db_dir)
+
+    assert health_data.date == "2026-05-10"
+    assert health_data.resting_hr == "59"
+    assert health_data.stress == "24"
+    assert health_data.body_battery_or_energy == "63"
+    assert health_data.sleep_hours == ""
+    assert health_data.hrv_status == ""
+    assert metadata["source_date"] == "2026-05-10"
+    assert metadata["metrics"]["daily_summary"]["table"] == "daily_summary"
+    assert metadata["metrics"]["resting_hr"]["column"] == "rhr"
+    assert metadata["metrics"]["stress"]["column"] == "stress_avg"
+    assert metadata["metrics"]["body_battery"]["column"] == "bb_charged"
+    assert metadata["metrics"]["rr_waking_avg"]["value"] == "14.1"
+    assert metadata["metrics"]["sleep_hours"]["reason"] == "column not found"
+    assert metadata["metrics"]["hrv_status"]["reason"] == "column not found"
+
+
 def test_garmindb_hrv_direction_unknown_without_baseline(tmp_path):
     db_dir = tmp_path / "DBs"
     db_dir.mkdir()

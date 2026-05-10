@@ -5,17 +5,41 @@ from pathlib import Path
 
 from common import DEFAULT_DB_DIR, DEFAULT_LOG_DIR, get_file_logger, today_iso
 
-from integrations.garmindb import GarminDBImportError, load_latest_health_data_with_metadata
+from integrations.garmindb import GarminDBImportError
 
 
-REQUIRED_TABLES = ["hrv", "sleep", "stress", "daily_summary"]
-REQUIRED_NON_EMPTY_TABLES = ["hrv", "sleep", "daily_summary"]
+OBSERVED_TABLES = ["hrv", "sleep", "stress", "daily_summary"]
+REQUIRED_NON_EMPTY_TABLES = ["daily_summary"]
 
 
 def _table_count(db_path, table):
     with sqlite3.connect(db_path) as connection:
         cursor = connection.execute(f'SELECT count(*) FROM "{table}"')
         return cursor.fetchone()[0]
+
+
+def _has_table(db_path, table):
+    with sqlite3.connect(db_path) as connection:
+        cursor = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        )
+        return cursor.fetchone() is not None
+
+
+def _latest_daily_summary_day(db_path):
+    with sqlite3.connect(db_path) as connection:
+        columns = [
+            row[1]
+            for row in connection.execute('PRAGMA table_info("daily_summary")').fetchall()
+        ]
+        if "day" not in columns:
+            raise GarminDBImportError("daily_summary table is missing day column")
+        cursor = connection.execute(
+            'SELECT date(day) AS day FROM daily_summary ORDER BY date(day) DESC LIMIT 1'
+        )
+        row = cursor.fetchone()
+        return row[0] if row else ""
 
 
 def _fail_validation(logger, message):
@@ -39,18 +63,27 @@ def validate_garmindb(db_dir=DEFAULT_DB_DIR, allow_stale=False, log_dir=DEFAULT_
         _fail_validation(logger, f"missing GarminDB database at {garmin_db}")
 
     table_counts = {}
-    for table in REQUIRED_TABLES:
+    for table in OBSERVED_TABLES:
         try:
-            table_counts[table] = _table_count(garmin_db, table)
+            if _has_table(garmin_db, table):
+                table_counts[table] = _table_count(garmin_db, table)
+            else:
+                table_counts[table] = 0
         except sqlite3.Error as error:
-            _fail_validation(logger, f"table {table} is missing or unreadable: {error}")
+            _fail_validation(logger, f"table {table} is unreadable: {error}")
 
     for table in REQUIRED_NON_EMPTY_TABLES:
         if table_counts.get(table, 0) <= 0:
             _fail_validation(logger, f"table {table} is empty")
 
-    health_data, metadata = load_latest_health_data_with_metadata(db_dir=db_dir)
-    latest_date = metadata.get("source_date") or health_data.date
+    try:
+        latest_date = _latest_daily_summary_day(garmin_db)
+    except (sqlite3.Error, GarminDBImportError) as error:
+        _fail_validation(logger, f"daily_summary.day is unreadable: {error}")
+
+    if not latest_date:
+        _fail_validation(logger, "daily_summary has no usable day values")
+
     current_date = today_iso()
     days_old = _days_old(latest_date, current_date)
     is_stale = days_old > 1

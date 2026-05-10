@@ -168,7 +168,7 @@ def test_validate_garmindb_fails_missing_database(tmp_path):
         validate_health_data_module.validate_garmindb(db_dir=tmp_path)
 
 
-def test_validate_garmindb_fails_empty_core_table(tmp_path):
+def test_validate_garmindb_fails_empty_daily_summary(tmp_path):
     db_dir = tmp_path / "DBs"
     db_dir.mkdir()
     with sqlite3.connect(db_dir / "garmin.db") as connection:
@@ -177,11 +177,10 @@ def test_validate_garmindb_fails_empty_core_table(tmp_path):
         connection.execute("CREATE TABLE stress (timestamp TEXT, stress INTEGER)")
         connection.execute("CREATE TABLE daily_summary (day TEXT)")
         connection.execute("INSERT INTO sleep (day) VALUES ('2026-05-10')")
-        connection.execute("INSERT INTO daily_summary (day) VALUES ('2026-05-10')")
 
     with pytest.raises(
         validate_health_data_module.GarminDBImportError,
-        match="table hrv is empty",
+        match="table daily_summary is empty",
     ):
         validate_health_data_module.validate_garmindb(db_dir=db_dir)
 
@@ -217,6 +216,34 @@ def test_validate_garmindb_passes_yesterday(tmp_path, monkeypatch):
     assert result["latest_recovery_date"] == "2026-05-09"
     assert result["is_stale"] is False
     assert result["days_old"] == 1
+
+
+def test_validate_garmindb_uses_fresh_daily_summary_despite_stale_raw_tables(
+    tmp_path,
+    monkeypatch,
+):
+    db_dir = tmp_path / "DBs"
+    db_dir.mkdir()
+    with sqlite3.connect(db_dir / "garmin.db") as connection:
+        connection.execute("CREATE TABLE hrv (day TEXT)")
+        connection.execute("CREATE TABLE sleep (day TEXT, total_sleep TEXT)")
+        connection.execute("CREATE TABLE stress (timestamp TEXT, stress INTEGER)")
+        connection.execute("CREATE TABLE daily_summary (day TEXT)")
+        connection.execute("INSERT INTO hrv (day) VALUES ('2026-05-01')")
+        connection.execute(
+            "INSERT INTO sleep (day, total_sleep) VALUES ('2026-05-01', '07:00:00')"
+        )
+        connection.execute("INSERT INTO daily_summary (day) VALUES ('2026-05-10')")
+    monkeypatch.setattr(validate_health_data_module, "today_iso", lambda: "2026-05-10")
+
+    result = validate_health_data_module.validate_garmindb(
+        db_dir=db_dir,
+        log_dir=tmp_path / "logs",
+    )
+
+    assert result["status"] == "ready"
+    assert result["latest_recovery_date"] == "2026-05-10"
+    assert result["is_stale"] is False
 
 
 def test_validate_garmindb_fails_two_days_old_latest_data(tmp_path, monkeypatch):
