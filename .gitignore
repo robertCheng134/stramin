@@ -1,6 +1,12 @@
 .env
+.venv/
 .DS_Store
 __pycache__/
 *.pyc
 data/garmin_health.csv
+HealthData/
+logs/
+*.db
+*.sqlite
+*.log
 garmindb.log

@@ -1,398 +1,273 @@
-# stramin
+# Stramin
 
-AI-powered Garmin recovery and training recommendation system.
+Garmin-first recovery and training recommendation infrastructure.
 
-## Project Vision
+Stramin turns local Garmin health data, optional Strava activity context, and a
+small rule-based decision engine into daily training recommendations. v4 focuses
+on reliable data ingestion, server operation, Telegram delivery, and safe
+automation. v5 is reserved for richer AI coaching.
 
-stramin is a Garmin-first training assistant that turns daily health signals,
-recent training load, and personal preferences into practical recovery and
-training recommendations.
-
-The goal is to make training decisions less reactive and more adaptive: respect
-the plan, listen to the body, and adjust before fatigue becomes a problem.
-
-## v2.0.0 Dynamic Adaptive Training Coach
-
-v2.0.0 introduces a Dynamic Adaptive Training Coach built around three ideas:
-
-- Garmin health data is the primary source of truth.
-- Strava activity history is optional context for training load.
-- GPT analysis is optional narrative coaching, not a hard dependency.
-
-The system can now compare planned workouts against current recovery, fatigue
-trend, and training load, then produce adjusted weekly recommendations.
-
-## Architecture Overview
-
-The app is intentionally modular:
-
-- Garmin CSV data is loaded, validated, and normalized.
-- Recovery rules calculate a daily recovery score and level.
-- Trend analysis summarizes recent Garmin health patterns.
-- Training load analysis evaluates recent Strava activity volume when available.
-- The decision engine recommends today’s training direction.
-- The weekly planner adapts planned workouts into a safer 7-day plan.
-- Report formatters generate readable daily and weekly output.
-
-The main flows are:
+## 🚀 Quick Start
 
 ```bash
-python3 src/morning_check.py
-python3 src/main.py
-```
-
-`morning_check.py` is the guided morning workflow. `main.py` generates reports
-from existing data.
-
-## Core Modules
-
-- `src/garmin_health.py`: reads and validates Garmin CSV data.
-- `src/add_garmin_entry.py`: interactively adds or updates Garmin health rows.
-- `src/morning_check.py`: captures today’s Garmin metrics and generates a report.
-- `src/recovery_rules.py`: calculates recovery score and recovery level.
-- `src/baseline.py`: calculates adaptive personal Garmin baselines.
-- `src/trend_analysis.py`: analyzes recent Garmin health trends.
-- `src/strava.py`: fetches optional recent Strava activities.
-- `src/training_load.py`: calculates personalized training load from Strava data.
-- `src/decision_engine.py`: recommends today’s training decision.
-- `src/weekly_planner.py`: adapts planned workouts into a weekly training plan.
-- `src/daily_report.py`: formats the daily recovery report.
-- `src/weekly_report.py`: formats the weekly training plan.
-- `src/gpt_analysis.py`: adds optional GPT coaching analysis.
-- `src/user_profile.py`: loads user preferences and planning configuration.
-
-## Garmin-First Workflow
-
-Garmin CSV is the primary supported health workflow in stramin.
-
-The recommended daily flow is:
-
-```bash
-python3 src/morning_check.py
-```
-
-This prompts for Garmin morning metrics, writes them to:
-
-```text
-data/garmin_health.csv
-```
-
-Then it runs recovery scoring, trend analysis, the decision engine, and the
-weekly planner.
-
-If `data/garmin_health.csv` does not exist, report generation falls back to:
-
-```text
-data/garmin_health_sample.csv
-```
-
-That fallback is for demos and tests. To use real data, create
-`data/garmin_health.csv` directly or run:
-
-```bash
-python3 src/add_garmin_entry.py
-```
-
-Apple Health and Samsung Health adapters exist as future extension points, but
-they do not implement real imports yet. Garmin CSV remains the supported path.
-
-## Data Sources
-
-### Garmin CSV
-
-Garmin health data is the foundation of the system.
-
-The app reads:
-
-```text
-data/garmin_health.csv
-```
-
-If that file does not exist, it falls back to:
-
-```text
-data/garmin_health_sample.csv
-```
-
-`data/garmin_health.csv` is ignored by git because it may contain personal
-health data.
-
-Required columns:
-
-```csv
-date,sleep_hours,hrv_status,body_battery,resting_hr
-```
-
-Optional columns:
-
-```csv
-stress
-```
-
-Example:
-
-```csv
-date,sleep_hours,hrv_status,body_battery,resting_hr,stress
-2026-05-06,5.8,low,45,56,51
-```
-
-Validation rules:
-
-- `date`: `YYYY-MM-DD`
-- `sleep_hours`: `0` to `24`
-- `hrv_status`: `balanced`, `low`, `poor`, or `unbalanced`
-- `body_battery`: `0` to `100`
-- `resting_hr`: `20` to `120`
-- `stress`: optional
-
-Invalid rows are skipped and never enter analysis or reports.
-
-### GarminDB Import
-
-v4.0-alpha.1 adds the first real Garmin data integration through GarminDB. The
-adapter reads Garmin health/body data from a local SQLite database and converts
-valid rows into stramin's normalized `HealthData` model.
-
-Set the database path in `.env`:
-
-```env
-GARMINDB_PATH=/path/to/garmin.db
-```
-
-The adapter can also receive a database path directly from code:
-
-```python
-from integrations.garmindb import load_health_data
-
-health_rows = load_health_data("/path/to/garmin.db")
-```
-
-Supported GarminDB-style daily summary tables include:
-
-- `DailySummary`
-- `daily_summary`
-- `daily_health_metrics`
-- `health_daily`
-
-The adapter looks for daily health columns such as date/day, sleep hours or
-minutes, HRV status or HRV value, body battery, resting heart rate, and optional
-stress. It handles missing paths, missing database files, missing expected
-tables, empty query results, and invalid rows with clear errors or warnings.
-
-Garmin CSV, manual entry, and Telegram entry remain fully supported. GarminDB is
-an import adapter; Strava remains the workout/activity source.
-
-### Optional Strava Context
-
-Strava is used only when `STRAVA_ACCESS_TOKEN` is available.
-
-Recent activities are used to calculate:
-
-- 7-day training minutes
-- 3-day training minutes
-- activity count
-- personalized training load level
-- overreaching risk
-
-If Strava is unavailable, reports still run with `training_load = None`.
-
-### Optional GPT Analysis
-
-GPT coaching is used only when `OPENAI_API_KEY` is available.
-
-If the key is missing, quota is exhausted, or the API raises an error, the app
-prints:
-
-```text
-GPT skipped: <error>
-```
-
-The system then continues with rule-based reporting, training decisions, and
-weekly planning.
-
-## User Profile
-
-Personal settings live in:
-
-```text
-config/user_profile.json
-```
-
-The profile controls preferred activities, disliked activities, training goals,
-weekly structure, dynamic workout adaptation, and personalized training load
-thresholds.
-
-Example:
-
-```json
-{
-  "preferred_activities": ["weight_training", "walking", "cycling"],
-  "disliked_activities": ["hiit"],
-  "training_goal": "general_fitness",
-  "garmin_start_date": "2026-05-01",
-  "apple_watch_start_date": "2026-05-01",
-  "samsung_health_start_date": "",
-  "weekly_training_minutes_baseline": 240,
-  "high_load_multiplier": 1.3,
-  "overreaching_3day_minutes_threshold": 180,
-  "training_load_sensitivity": "moderate",
-  "weekly_structure": {
-    "Monday": "weight_training",
-    "Tuesday": "walking",
-    "Wednesday": "rest",
-    "Thursday": "weight_training",
-    "Friday": "cycling",
-    "Saturday": "weight_training",
-    "Sunday": "rest"
-  },
-  "planned_workouts": {
-    "Monday": {
-      "activity": "weight_training",
-      "focus": "legs",
-      "intensity": "high"
-    },
-    "Tuesday": {
-      "activity": "cycling",
-      "intensity": "moderate"
-    }
-  },
-  "priority_muscle_groups": ["chest", "back", "legs"],
-  "preferred_training_time": "evening",
-  "rest_days": ["Sunday"],
-  "session_duration_minutes": 60
-}
-```
-
-Device start dates are optional and use `YYYY-MM-DD` format. They prevent future
-health imports from scanning or importing data before you actually started using
-that platform. GarminDB uses `garmin_start_date` when it is present and valid.
-If a start date is missing or invalid, stramin keeps the previous import behavior
-and continues without crashing.
-
-## Weekly Planner and Dynamic Adaptation
-
-The weekly planner starts from `planned_workouts` and `weekly_structure`, then
-adapts each day based on:
-
-- recovery level
-- fatigue trend
-- training load level
-- overreaching risk
-- rest days
-- disliked activities
-
-Each weekly plan item includes:
-
-- `planned_activity`
-- `adjusted_activity`
-- `original_intensity`
-- `adjusted_intensity`
-- `adaptation_reason`
-
-Examples of adaptation:
-
-- Poor recovery can turn high intensity training into a recovery walk.
-- Overreaching risk lowers moderate or high intensity by one level.
-- Worsening fatigue adds recovery sessions.
-- Rest days remain rest days.
-
-## Running the App
-
-Install dependencies:
-
-```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-Create local environment config:
-
-```bash
 cp .env.example .env
+python3 -m pytest
+python3 scripts/preview_garmindb_recommendation.py --db-dir ~/HealthData/DBs
 ```
 
-Run the guided morning workflow:
+Manual Garmin CSV flow is still available:
 
 ```bash
 python3 src/morning_check.py
-```
-
-Generate reports from existing CSV data:
-
-```bash
 python3 src/main.py
+python3 src/add_garmin_entry.py
 ```
 
-Manually add or update a Garmin entry:
+## 🧭 What Stramin Is
+
+Stramin is a practical training assistant, not a medical device. It currently
+does four things:
+
+- imports Garmin health data from CSV or GarminDB
+- calculates recovery score and training decisions with explicit rules
+- optionally uses Strava for activity load
+- exposes CLI and Telegram interfaces
+
+It does not automatically sync GarminDB yet, and it does not rely on AI for core
+decisions.
+
+## 📦 v4 Scope
+
+v4 is an infrastructure release:
+
+- GarminDB latest health ingestion
+- Telegram `/today` product-facing output
+- CLI preview tools
+- local server deployment hygiene
+- validation before recommendations
+- privacy-safe runtime defaults
+
+v5 will focus on AI coaching, narrative personalization, and richer adaptive
+training suggestions. Do not add fake AI behavior to v4.
+
+## 🏗️ Architecture
+
+```text
+MacBook / Garmin Connect
+        |
+        | GarminDB sync
+        v
+Debian server: ~/HealthData/DBs/*.db
+        |
+        | src/integrations/garmindb.py
+        v
+HealthData model
+        |
+        +--> recovery_rules.py
+        +--> decision_engine.py
+        +--> weekly_planner.py
+        |
+        +--> CLI preview
+        +--> Telegram bot
+```
+
+Core modules:
+
+- `src/integrations/garmindb.py`: GarminDB SQLite ingestion
+- `src/health_data.py`: normalized health model
+- `src/recovery_rules.py`: recovery score and level
+- `src/decision_engine.py`: daily recommendation decision
+- `src/weekly_planner.py`: weekly adaptation logic
+- `src/telegram_bot.py`: Telegram command interface
+- `scripts/test_garmindb_today.py`: GarminDB debug inspection
+- `scripts/preview_garmindb_recommendation.py`: product-style CLI preview
+
+## 🖥️ Server And Client Roles
+
+**Debian server**
+
+- runs Stramin and Telegram bot
+- owns `.venv`
+- stores local GarminDB data under `~/HealthData`
+- runs long GarminDB sync/import jobs in `tmux`
+- sends Telegram recommendations after validation
+
+**MacBook / client**
+
+- development and git workflow
+- optional GarminDB sync source if desired
+- never commits private health DBs, logs, `.env`, or credentials
+
+**Telegram bot**
+
+- `/today`: prefers GarminDB recommendation flow
+- `/weekly`: existing weekly planner
+- `/entry`: manual Garmin morning input fallback
+- `/cancel`: cancel manual entry flow
+
+## 🧬 GarminDB Integration
+
+Stramin reads local SQLite databases generated by GarminDB. It does not store
+Garmin credentials and does not automatically run sync in v4.
+
+Important paths:
+
+- GarminDB config: `~/.GarminDb/GarminConnectConfig.json`
+- health data root: `~/HealthData`
+- main DB: `~/HealthData/DBs/garmin.db`
+- monitoring DB: `~/HealthData/DBs/garmin_monitoring.db`
+- virtualenv install: `~/stramin/.venv`
+
+Metric sources:
+
+- sleep: `garmin.db.sleep.total_sleep`
+- stress: latest valid `garmin.db.stress.stress` where `stress >= 0`
+- resting HR: primary `garmin.db.resting_hr.resting_heart_rate`
+- HRV: primary `garmin.db.hrv.last_night_avg`; fallback
+  `garmin_monitoring.db.monitoring_hrv_status.last_night`
+- HRV 5-minute high: `last_night_5min_high` or monitoring fallback
+  `last_night_average`
+- Body Battery: currently unavailable in the known GarminDB schema and treated
+  as missing
+
+Debug:
 
 ```bash
-python3 src/add_garmin_entry.py
-python3 src/add_garmin_entry.py --date 2026-05-01
+python3 scripts/test_garmindb_today.py --db-dir ~/HealthData/DBs --debug
 ```
 
-## Telegram Bot Usage
+See [docs/garmindb-operations.md](docs/garmindb-operations.md) for operational
+commands and known GarminDB issues.
 
-stramin can also run as a Telegram bot interface over the same Garmin-first
-workflow. The bot does not replace the CSV workflow; `/entry` writes today's
-Garmin metrics to `data/garmin_health.csv`, while `/today` and `/weekly`
-generate the same daily and weekly outputs that the CLI uses.
-
-Set the bot token in `.env`:
+## ⚙️ Environment Variables
 
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token_here
+STRAVA_ACCESS_TOKEN=your_token_here
+OPENAI_API_KEY=your_key_here
+GARMINDB_PATH=/home/rc/HealthData/DBs/garmin.db
 ```
 
-Start the bot:
+Notes:
 
-```bash
-python3 src/telegram_bot.py
-```
+- `.env` is ignored and must never be committed.
+- `GARMINDB_PATH` is a local SQLite path, not a Garmin credential.
+- Garmin credentials belong only in
+  `~/.GarminDb/GarminConnectConfig.json`.
+- `OPENAI_API_KEY` is optional; v4 does not depend on AI coaching.
 
-Supported commands:
+## 🧪 Testing
 
-- `/start`: intro message
-- `/help`: command list
-- `/today`: Garmin-first daily recovery recommendation
-- `/weekly`: adaptive weekly training plan
-- `/entry`: guided Garmin morning data entry for today
-- `/cancel`: cancel an active `/entry` flow
-
-The `/entry` flow asks for `sleep_hours`, `hrv_status`, `body_battery`,
-`resting_hr`, and optional `stress`. Values use the same validation rules as
-the CLI and Garmin CSV reader. If today's row already exists, the bot updates
-that row; otherwise it appends a new one. After saving, the bot confirms the
-entry and tries to show today's recommendation.
-
-Optional integrations behave the same as the CLI:
-
-- Missing Garmin CSV falls back to `data/garmin_health_sample.csv`.
-- Missing or unavailable Strava leaves training load empty.
-- Missing or unavailable GPT falls back to rule-based reporting.
-
-## Testing
-
-Run the full test suite:
+Run everything:
 
 ```bash
 python3 -m pytest
 ```
 
-Current coverage includes:
+Useful smoke checks:
 
-- recovery scoring
-- baseline calculation
-- Garmin CSV validation behavior
-- decision engine outcomes
-- training load personalization
-- weekly planner behavior
-- dynamic workout adaptation
+```bash
+python3 scripts/test_garmindb_today.py --db-dir ~/HealthData/DBs --debug
+python3 scripts/preview_garmindb_recommendation.py --db-dir ~/HealthData/DBs
+```
 
-## Roadmap
+## 🚢 Deployment Checklist
 
-- Garmin API import when a reliable integration path is chosen.
-- richer trend scoring across sleep, HRV, resting HR, and body battery.
-- muscle-group rotation for planned strength sessions.
-- workout history feedback loops for progressive overload.
-- report export to Markdown, email, or calendar.
-- safer Strava token refresh handling.
-- expanded tests for end-to-end morning workflows.
+- clone repo on Debian server
+- create `~/stramin/.venv`
+- install requirements
+- create `.env` from `.env.example`
+- configure GarminDB credentials at `~/.GarminDb/GarminConnectConfig.json`
+- verify `~/HealthData/DBs/garmin.db` exists
+- validate GarminDB tables with `sqlite3`
+- run `python3 -m pytest`
+- run GarminDB preview script
+- start Telegram bot in `tmux`
+- monitor logs under `logs/`
+
+## 🧵 Why tmux Matters
+
+GarminDB download/import/analyze jobs can run for a long time and may survive
+SSH disconnects. Use `tmux` for sync tasks and bot processes so production work
+does not die when your terminal closes.
+
+Example:
+
+```bash
+tmux new -s stramin-sync
+source ~/stramin/.venv/bin/activate
+garmindb_cli.py --all --download --import --analyze --latest
+```
+
+Detach with `Ctrl-b d`, reattach with:
+
+```bash
+tmux attach -t stramin-sync
+```
+
+## 🌿 Git Workflow
+
+- work on feature branches, for example `feature/garmindb-today-flow`
+- keep PRs focused
+- run `python3 -m pytest` before pushing
+- never commit private DBs, logs, `.env`, tokens, or Garmin credentials
+- preserve tests unless replacing them with stronger coverage
+
+## 🧯 Troubleshooting
+
+GarminDB sync/download issues:
+
+- known error:
+  `TypeError: argument of type 'NoneType' is not iterable`
+- prefer:
+  `garmindb_cli.py --all --download --import --analyze --latest`
+- run inside `tmux`
+- validate DB tables before sending Telegram recommendations
+
+No recommendation:
+
+- confirm `~/HealthData/DBs/garmin.db` exists
+- run the debug script
+- check stress rows; negative stress values are ignored
+- use `/entry` as manual fallback
+
+Telegram bot not responding:
+
+- confirm `TELEGRAM_BOT_TOKEN`
+- run inside `tmux`
+- check network access and logs
+
+## 🔐 Privacy And Security
+
+Never commit:
+
+- `.env`
+- `.venv/`
+- `HealthData/`
+- `*.db`, `*.sqlite`
+- `*.log`, `logs/`
+- Garmin credentials
+- real `data/garmin_health.csv`
+
+Health data is sensitive. Treat local SQLite files and logs as private runtime
+artifacts.
+
+## 🗺️ Roadmap
+
+v4:
+
+- stable GarminDB ingestion
+- validation-gated Telegram delivery
+- nightly sync automation design
+- stale-data protection
+- production logging
+
+v5:
+
+- AI coaching layer
+- richer narrative explanations
+- training-history-aware suggestions
+- safer personalization controls
