@@ -412,8 +412,8 @@ def test_run_daily_pipeline_builds_state_without_telegram(tmp_path, monkeypatch)
     assert result["recommendation_preview"]["recommendation"] == (
         "train / normal / walking"
     )
-    assert "Stramin Daily Report" in result["telegram_message"]
-    assert "sleep_hours: 7.0" in result["telegram_message"]
+    assert "🌅 Stramin Daily Recovery" in result["telegram_message"]
+    assert "Sleep: 7.0h" in result["telegram_message"]
     assert result["notification_state"]["telegram_sent"] is False
     assert not (tmp_path / "notification_state.json").exists()
     assert (log_dir / "pipeline.log").exists()
