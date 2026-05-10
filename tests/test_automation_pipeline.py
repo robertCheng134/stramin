@@ -248,6 +248,11 @@ def test_run_daily_pipeline_validation_failure_before_cutoff_is_retryable(
         raise run_daily_pipeline_module.GarminDBImportError("validation failed")
 
     monkeypatch.setattr(run_daily_pipeline_module, "validate_garmindb", fail_validation)
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "send_message",
+        lambda text: {"success": False, "reason": "not_sent"},
+    )
 
     result = run_daily_pipeline_module.run_daily_pipeline(
         db_dir=tmp_path,
@@ -284,6 +289,12 @@ def test_run_daily_pipeline_validation_failure_after_cutoff_is_final_failure(
         raise run_daily_pipeline_module.GarminDBImportError("validation failed")
 
     monkeypatch.setattr(run_daily_pipeline_module, "validate_garmindb", fail_validation)
+    sent_messages = []
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "send_message",
+        lambda text: sent_messages.append(text) or {"success": True, "message": "sent"},
+    )
 
     result = run_daily_pipeline_module.run_daily_pipeline(
         db_dir=tmp_path,
@@ -298,9 +309,12 @@ def test_run_daily_pipeline_validation_failure_after_cutoff_is_final_failure(
     assert result["telegram_sent"] is False
     assert "after cutoff" in result["telegram_reason"]
     assert not output.exists()
+    assert sent_messages
+    assert "No training recommendation was sent." in sent_messages[0]
+    assert "Recommendation\n" not in sent_messages[0]
     written_state = json.loads(notification_state.read_text(encoding="utf-8"))
     assert written_state["retry_count"] == 1
-    assert written_state["final_failure_sent"] is False
+    assert written_state["final_failure_sent"] is True
 
 
 def test_run_daily_pipeline_noops_when_report_already_sent_today(
@@ -363,10 +377,23 @@ def test_run_daily_pipeline_builds_state_without_telegram(tmp_path, monkeypatch)
         "build_daily_state",
         lambda **kwargs: {
             "latest_recovery_date": "2026-05-10",
+            "sleep_hours": "7.0",
+            "hrv": {"hrv_value": "42", "hrv_unit": "ms", "hrv_balance": "stable"},
+            "stress": "20",
+            "resting_hr": "58",
             "recommendation": "train / normal / walking",
             "rationale": "Ready.",
-            "decision": {"decision": "train"},
+            "decision": {
+                "decision": "train",
+                "intensity": "normal",
+                "suggested_activity": "walking",
+            },
         },
+    )
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "send_message",
+        lambda text: pytest.fail("dry-run must not send Telegram"),
     )
 
     result = run_daily_pipeline_module.run_daily_pipeline(
@@ -385,6 +412,70 @@ def test_run_daily_pipeline_builds_state_without_telegram(tmp_path, monkeypatch)
     assert result["recommendation_preview"]["recommendation"] == (
         "train / normal / walking"
     )
+    assert "Stramin Daily Report" in result["telegram_message"]
+    assert "sleep_hours: 7.0" in result["telegram_message"]
     assert result["notification_state"]["telegram_sent"] is False
     assert not (tmp_path / "notification_state.json").exists()
     assert (log_dir / "pipeline.log").exists()
+
+
+def test_run_daily_pipeline_successful_send_marks_telegram_sent(
+    tmp_path,
+    monkeypatch,
+):
+    output = tmp_path / "daily_state.json"
+    notification_state = tmp_path / "notification_state.json"
+
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "sync_garmindb",
+        lambda log_dir: {"status": "skipped_manual_sync_required"},
+    )
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "validate_garmindb",
+        lambda **kwargs: {
+            "status": "ready",
+            "latest_recovery_date": "2026-05-10",
+            "is_stale": False,
+        },
+    )
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "build_daily_state",
+        lambda **kwargs: {
+            "latest_recovery_date": "2026-05-10",
+            "sleep_hours": "7.0",
+            "hrv": {"hrv_value": "42", "hrv_unit": "ms", "hrv_balance": "stable"},
+            "stress": "20",
+            "resting_hr": "58",
+            "recommendation": "train / normal / walking",
+            "rationale": "Ready.",
+            "decision": {
+                "decision": "train",
+                "intensity": "normal",
+                "suggested_activity": "walking",
+            },
+        },
+    )
+    sent_messages = []
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "send_message",
+        lambda text: sent_messages.append(text) or {"success": True, "message": "sent"},
+    )
+
+    result = run_daily_pipeline_module.run_daily_pipeline(
+        db_dir=tmp_path,
+        output=output,
+        log_dir=tmp_path / "logs",
+        notification_state_path=notification_state,
+        current_datetime=datetime.fromisoformat("2026-05-10T09:00:00+08:00"),
+    )
+
+    assert result["status"] == "ready"
+    assert result["telegram_sent"] is True
+    assert sent_messages
+    written_state = json.loads(notification_state.read_text(encoding="utf-8"))
+    assert written_state["telegram_sent"] is True
+    assert written_state["sent_at"]

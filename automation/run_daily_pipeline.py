@@ -12,6 +12,9 @@ from sync_garmindb import sync_garmindb
 from validate_health_data import validate_garmindb
 
 from integrations.garmindb import GarminDBImportError
+from integrations.telegram_sender import send_message
+from reports.telegram_report import format_daily_telegram_report
+from reports.telegram_report import format_warning_telegram_report
 
 
 DEFAULT_DAILY_REPORT_TIME = os.getenv("STRAMIN_DAILY_REPORT_TIME", "09:00")
@@ -111,6 +114,15 @@ def run_daily_pipeline(
 
         if after_cutoff:
             logger.error("Validation failed after cutoff: %s", error)
+            warning_message = format_warning_telegram_report(str(error))
+            warning_send_result = {"success": False, "reason": "not_sent"}
+            if dry_run:
+                print(warning_message)
+                logger.info("Dry-run Telegram warning preview:\n%s", warning_message)
+            else:
+                warning_send_result = send_message(warning_message)
+                if warning_send_result.get("success"):
+                    notification_state["final_failure_sent"] = True
             if not dry_run:
                 _save_notification_state(notification_state_path, notification_state)
             return {
@@ -123,6 +135,8 @@ def run_daily_pipeline(
                     "Validation failed after cutoff; no training recommendation sent."
                 ),
                 "validation_error": str(error),
+                "telegram_message": warning_message,
+                "telegram_send_result": warning_send_result,
                 "notification_state": notification_state,
             }
 
@@ -158,22 +172,34 @@ def run_daily_pipeline(
         "rationale": state.get("rationale", ""),
         "decision": state.get("decision", {}),
     }
+    telegram_message = format_daily_telegram_report(state, recommendation_preview)
     logger.info("Recommendation preview built: %s", recommendation_preview)
-    logger.info("Daily pipeline completed without Telegram publish")
+    telegram_send_result = {"success": False, "reason": "dry_run"}
 
-    if not dry_run:
+    if dry_run:
+        print(telegram_message)
+        logger.info("Dry-run Telegram report preview:\n%s", telegram_message)
+    else:
+        telegram_send_result = send_message(telegram_message)
+        if telegram_send_result.get("success"):
+            notification_state["telegram_sent"] = True
+            notification_state["sent_at"] = now_iso()
         _save_notification_state(notification_state_path, notification_state)
+
+    logger.info("Daily pipeline completed telegram_sent=%s", telegram_send_result.get("success"))
 
     return {
         "status": "ready",
         "dry_run": dry_run,
         "daily_report_time": daily_report_time,
-        "telegram_sent": False,
+        "telegram_sent": bool(telegram_send_result.get("success")),
         "telegram_reason": (
             "Dry run enabled; no Telegram message sent."
             if dry_run
-            else "Telegram auto-send is disabled for v4 local execution."
+            else telegram_send_result.get("message", "")
         ),
+        "telegram_message": telegram_message,
+        "telegram_send_result": telegram_send_result,
         "recommendation_preview": recommendation_preview,
         "notification_state": notification_state,
         "state": state,
