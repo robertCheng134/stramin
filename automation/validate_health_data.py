@@ -1,5 +1,6 @@
 import argparse
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 from common import DEFAULT_DB_DIR, DEFAULT_LOG_DIR, get_file_logger, today_iso
@@ -21,6 +22,12 @@ def _fail_validation(logger, message):
     full_message = f"GarminDB validation failed: {message}"
     logger.error(full_message)
     raise GarminDBImportError(full_message)
+
+
+def _days_old(latest_date, current_date):
+    latest = datetime.strptime(latest_date, "%Y-%m-%d").date()
+    current = datetime.strptime(current_date, "%Y-%m-%d").date()
+    return (current - latest).days
 
 
 def validate_garmindb(db_dir=DEFAULT_DB_DIR, allow_stale=False, log_dir=DEFAULT_LOG_DIR):
@@ -45,13 +52,14 @@ def validate_garmindb(db_dir=DEFAULT_DB_DIR, allow_stale=False, log_dir=DEFAULT_
     health_data, metadata = load_latest_health_data_with_metadata(db_dir=db_dir)
     latest_date = metadata.get("source_date") or health_data.date
     current_date = today_iso()
-    is_stale = latest_date != current_date
+    days_old = _days_old(latest_date, current_date)
+    is_stale = days_old > 1
 
     if is_stale and not allow_stale:
         _fail_validation(
             logger,
             (
-                f"latest recovery date {latest_date} is stale; "
+                f"latest recovery date {latest_date} is too stale; "
                 f"current date is {current_date}"
             ),
         )
@@ -61,6 +69,7 @@ def validate_garmindb(db_dir=DEFAULT_DB_DIR, allow_stale=False, log_dir=DEFAULT_
         "db_dir": str(db_dir),
         "validated_at": current_date,
         "latest_recovery_date": latest_date,
+        "days_old": days_old,
         "is_stale": is_stale,
         "table_counts": table_counts,
     }

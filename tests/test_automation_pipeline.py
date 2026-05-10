@@ -185,7 +185,7 @@ def test_validate_garmindb_fails_empty_core_table(tmp_path):
         validate_health_data_module.validate_garmindb(db_dir=db_dir)
 
 
-def test_validate_garmindb_passes_with_current_real_data_tables(tmp_path, monkeypatch):
+def test_validate_garmindb_passes_today(tmp_path, monkeypatch):
     db_dir = tmp_path / "DBs"
     _create_valid_garmindb(db_dir, day="2026-05-10")
     monkeypatch.setattr(validate_health_data_module, "today_iso", lambda: "2026-05-10")
@@ -198,17 +198,34 @@ def test_validate_garmindb_passes_with_current_real_data_tables(tmp_path, monkey
     assert result["status"] == "ready"
     assert result["latest_recovery_date"] == "2026-05-10"
     assert result["is_stale"] is False
+    assert result["days_old"] == 0
     assert result["table_counts"]["hrv"] == 1
 
 
-def test_validate_garmindb_fails_stale_latest_data(tmp_path, monkeypatch):
+def test_validate_garmindb_passes_yesterday(tmp_path, monkeypatch):
     db_dir = tmp_path / "DBs"
     _create_valid_garmindb(db_dir, day="2026-05-09")
     monkeypatch.setattr(validate_health_data_module, "today_iso", lambda: "2026-05-10")
 
+    result = validate_health_data_module.validate_garmindb(
+        db_dir=db_dir,
+        log_dir=tmp_path / "logs",
+    )
+
+    assert result["status"] == "ready"
+    assert result["latest_recovery_date"] == "2026-05-09"
+    assert result["is_stale"] is False
+    assert result["days_old"] == 1
+
+
+def test_validate_garmindb_fails_two_days_old_latest_data(tmp_path, monkeypatch):
+    db_dir = tmp_path / "DBs"
+    _create_valid_garmindb(db_dir, day="2026-05-08")
+    monkeypatch.setattr(validate_health_data_module, "today_iso", lambda: "2026-05-10")
+
     with pytest.raises(
         validate_health_data_module.GarminDBImportError,
-        match="latest recovery date 2026-05-09 is stale",
+        match="latest recovery date 2026-05-08 is too stale; current date is 2026-05-10",
     ):
         validate_health_data_module.validate_garmindb(db_dir=db_dir)
 

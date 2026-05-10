@@ -186,3 +186,27 @@ Never commit:
 
 Health data and logs are private runtime artifacts.
 
+GarminDB CLI is unstable for automated sync usage.
+Prefer controlled wrapper logic or internalized integration in v4+.
+## GarminDB Usage Rule
+
+GarminDB behavior and schema are unstable across versions.
+
+Before modifying:
+- automation/
+- integrations/garmindb.py
+- validation logic
+- GarminDB SQL queries
+- sync commands
+
+the agent MUST:
+1. Re-check the current GarminDB README and CLI help.
+2. Verify actual local SQLite schema instead of assuming columns.
+3. Prefer validation through real DB inspection over assumptions.
+4. Treat GarminDB CLI as unreliable for production automation.
+5. Keep all GarminDB-specific assumptions documented.
+
+Known issue:
+`garmindb_cli.py --download --latest`
+may fail unless combined with:
+`--all`
