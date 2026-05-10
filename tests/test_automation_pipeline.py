@@ -2,6 +2,7 @@ import importlib.util
 import json
 import sqlite3
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -230,8 +231,12 @@ def test_validate_garmindb_fails_two_days_old_latest_data(tmp_path, monkeypatch)
         validate_health_data_module.validate_garmindb(db_dir=db_dir)
 
 
-def test_run_daily_pipeline_fails_when_validation_fails(tmp_path, monkeypatch):
+def test_run_daily_pipeline_validation_failure_before_cutoff_is_retryable(
+    tmp_path,
+    monkeypatch,
+):
     output = tmp_path / "daily_state.json"
+    notification_state = tmp_path / "notification_state.json"
 
     monkeypatch.setattr(
         run_daily_pipeline_module,
@@ -244,14 +249,95 @@ def test_run_daily_pipeline_fails_when_validation_fails(tmp_path, monkeypatch):
 
     monkeypatch.setattr(run_daily_pipeline_module, "validate_garmindb", fail_validation)
 
-    with pytest.raises(run_daily_pipeline_module.GarminDBImportError):
-        run_daily_pipeline_module.run_daily_pipeline(
-            db_dir=tmp_path,
-            output=output,
-            log_dir=tmp_path / "logs",
-        )
+    result = run_daily_pipeline_module.run_daily_pipeline(
+        db_dir=tmp_path,
+        output=output,
+        log_dir=tmp_path / "logs",
+        notification_state_path=notification_state,
+        current_datetime=datetime.fromisoformat("2026-05-10T09:10:00+08:00"),
+    )
 
+    assert result["status"] == "retryable"
+    assert result["retryable"] is True
+    assert result["retry_interval_minutes"] == 5
+    assert result["telegram_sent"] is False
     assert not output.exists()
+    written_state = json.loads(notification_state.read_text(encoding="utf-8"))
+    assert written_state["retry_count"] == 1
+    assert written_state["telegram_sent"] is False
+
+
+def test_run_daily_pipeline_validation_failure_after_cutoff_is_final_failure(
+    tmp_path,
+    monkeypatch,
+):
+    output = tmp_path / "daily_state.json"
+    notification_state = tmp_path / "notification_state.json"
+
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "sync_garmindb",
+        lambda log_dir: {"status": "skipped_manual_sync_required"},
+    )
+
+    def fail_validation(**kwargs):
+        raise run_daily_pipeline_module.GarminDBImportError("validation failed")
+
+    monkeypatch.setattr(run_daily_pipeline_module, "validate_garmindb", fail_validation)
+
+    result = run_daily_pipeline_module.run_daily_pipeline(
+        db_dir=tmp_path,
+        output=output,
+        log_dir=tmp_path / "logs",
+        notification_state_path=notification_state,
+        current_datetime=datetime.fromisoformat("2026-05-10T11:05:00+08:00"),
+    )
+
+    assert result["status"] == "final_failure"
+    assert result["retryable"] is False
+    assert result["telegram_sent"] is False
+    assert "after cutoff" in result["telegram_reason"]
+    assert not output.exists()
+    written_state = json.loads(notification_state.read_text(encoding="utf-8"))
+    assert written_state["retry_count"] == 1
+    assert written_state["final_failure_sent"] is False
+
+
+def test_run_daily_pipeline_noops_when_report_already_sent_today(
+    tmp_path,
+    monkeypatch,
+):
+    notification_state = tmp_path / "notification_state.json"
+    notification_state.write_text(
+        json.dumps(
+            {
+                "date": "2026-05-10",
+                "telegram_sent": True,
+                "sent_at": "2026-05-10T09:01:00+08:00",
+                "last_attempt_at": "2026-05-10T09:01:00+08:00",
+                "retry_count": 0,
+                "final_failure_sent": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fail_if_called(**kwargs):
+        raise AssertionError("pipeline should no-op before validation")
+
+    monkeypatch.setattr(run_daily_pipeline_module, "validate_garmindb", fail_if_called)
+
+    result = run_daily_pipeline_module.run_daily_pipeline(
+        db_dir=tmp_path,
+        output=tmp_path / "daily_state.json",
+        log_dir=tmp_path / "logs",
+        notification_state_path=notification_state,
+        current_datetime=datetime.fromisoformat("2026-05-10T09:30:00+08:00"),
+    )
+
+    assert result["status"] == "already_sent"
+    assert result["telegram_sent"] is False
+    assert "already sent" in result["telegram_reason"]
 
 
 def test_run_daily_pipeline_builds_state_without_telegram(tmp_path, monkeypatch):
@@ -287,7 +373,9 @@ def test_run_daily_pipeline_builds_state_without_telegram(tmp_path, monkeypatch)
         db_dir=tmp_path,
         output=output,
         log_dir=log_dir,
+        notification_state_path=tmp_path / "notification_state.json",
         dry_run=True,
+        current_datetime=datetime.fromisoformat("2026-05-10T09:00:00+08:00"),
     )
 
     assert result["status"] == "ready"
@@ -297,4 +385,6 @@ def test_run_daily_pipeline_builds_state_without_telegram(tmp_path, monkeypatch)
     assert result["recommendation_preview"]["recommendation"] == (
         "train / normal / walking"
     )
+    assert result["notification_state"]["telegram_sent"] is False
+    assert not (tmp_path / "notification_state.json").exists()
     assert (log_dir / "pipeline.log").exists()

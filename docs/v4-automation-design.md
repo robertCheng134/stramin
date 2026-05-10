@@ -81,9 +81,67 @@ Send Telegram output only when:
 - validation passed
 - daily state was atomically written
 - latest data is not stale beyond the configured tolerance
+- no Telegram report has already been sent for the same local date
 
 If validation fails, send no proactive recommendation. A manual `/today` command
 may still show a graceful fallback or ask the user to use `/entry`.
+
+## Scheduled Readiness Retry
+
+The daily Telegram report is intended to run around `09:00`, but Garmin
+sleep, HRV, and resting heart rate can lag behind the user's morning. The
+automation must treat readiness as a gate, not as a best-effort suggestion.
+
+Default schedule config:
+
+- `STRAMIN_DAILY_REPORT_TIME=09:00`
+- `STRAMIN_RETRY_INTERVAL_MINUTES=5`
+- `STRAMIN_RETRY_CUTOFF_TIME=11:00`
+
+Behavior:
+
+1. At `09:00`, run the daily pipeline.
+2. If validation passes, build `daily_state.json`, build the recommendation
+   preview, and publish immediately when a safe sender exists.
+3. If validation fails before the cutoff because data is not ready, log the
+   failure, send no Telegram message, and exit with a retryable status. The
+   scheduler can call the same command again after the retry interval.
+4. Retry every 5 minutes by default.
+5. Stop retrying after the cutoff time, default `11:00`.
+6. After cutoff, send only a warning/status message if a warning sender exists.
+   Do not send a training recommendation based on unvalidated data.
+7. Prevent duplicate Telegram training reports for the same local date.
+
+v4 does not introduce a background daemon. Retry is a stateful, synchronous
+pipeline behavior that a future cron/systemd timer can call repeatedly.
+
+## Notification State
+
+The retry gate uses a small local state file:
+
+`data/notification_state.json`
+
+Suggested shape:
+
+```json
+{
+  "date": "2026-05-10",
+  "telegram_sent": false,
+  "sent_at": "",
+  "last_attempt_at": "2026-05-10T09:05:00+08:00",
+  "retry_count": 1,
+  "final_failure_sent": false
+}
+```
+
+Rules:
+
+- reset state automatically when the local date changes
+- if `telegram_sent=true` for today, the pipeline must no-op
+- update `last_attempt_at` and `retry_count` on validation failures
+- set `telegram_sent=true` only after a real Telegram send succeeds
+- set `final_failure_sent=true` only after a final warning/status send succeeds
+- dry-run mode must never mark `telegram_sent=true`
 
 ## Stale-Data Protection
 
@@ -151,4 +209,3 @@ Future automation can move from `tmux` to `cron` or `systemd` when:
 - failure notifications are clear
 
 Until then, prefer manual `tmux` operation for production safety.
-

@@ -10,6 +10,7 @@ SRC_DIR = ROOT_DIR / "src"
 DEFAULT_DB_DIR = Path("~/HealthData/DBs").expanduser()
 DEFAULT_LOG_DIR = ROOT_DIR / "logs"
 DEFAULT_STATE_PATH = ROOT_DIR / "daily_state.json"
+DEFAULT_NOTIFICATION_STATE_PATH = ROOT_DIR / "data" / "notification_state.json"
 
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
