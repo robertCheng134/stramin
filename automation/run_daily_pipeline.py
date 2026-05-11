@@ -60,6 +60,175 @@ def _save_notification_state(path, state):
     return write_json_atomic(path.expanduser(), state)
 
 
+def _recommendation_preview_from_state(state):
+    return {
+        "recommendation": state.get("recommendation", ""),
+        "rationale": state.get("rationale", ""),
+        "decision": state.get("decision", {}),
+    }
+
+
+def _already_sent_result(dry_run, daily_report_time, notification_state):
+    return {
+        "status": "already_sent",
+        "dry_run": dry_run,
+        "daily_report_time": daily_report_time,
+        "telegram_sent": False,
+        "telegram_reason": "Daily report already sent for today.",
+        "notification_state": notification_state,
+    }
+
+
+def _retryable_result(
+    dry_run,
+    daily_report_time,
+    retry_interval_minutes,
+    error,
+    notification_state,
+):
+    return {
+        "status": "retryable",
+        "retryable": True,
+        "retry_interval_minutes": retry_interval_minutes,
+        "dry_run": dry_run,
+        "daily_report_time": daily_report_time,
+        "telegram_sent": False,
+        "telegram_reason": (
+            "Validation failed before cutoff; no training recommendation sent."
+        ),
+        "validation_error": str(error),
+        "notification_state": notification_state,
+    }
+
+
+def _final_failure_result(
+    dry_run,
+    daily_report_time,
+    error,
+    warning_message,
+    warning_send_result,
+    notification_state,
+):
+    return {
+        "status": "final_failure",
+        "retryable": False,
+        "dry_run": dry_run,
+        "daily_report_time": daily_report_time,
+        "telegram_sent": False,
+        "telegram_reason": (
+            "Validation failed after cutoff; no training recommendation sent."
+        ),
+        "validation_error": str(error),
+        "telegram_message": warning_message,
+        "telegram_send_result": warning_send_result,
+        "notification_state": notification_state,
+    }
+
+
+def _handle_validation_failure(
+    error,
+    current_time,
+    cutoff_time,
+    dry_run,
+    daily_report_time,
+    retry_interval_minutes,
+    notification_state,
+    notification_state_path,
+    logger,
+):
+    notification_state["retry_count"] = int(
+        notification_state.get("retry_count", 0)
+    ) + 1
+    after_cutoff = _is_after_cutoff(current_time, cutoff_time)
+
+    if not after_cutoff:
+        logger.warning(
+            "Validation failed before cutoff; retry in %s minutes: %s",
+            retry_interval_minutes,
+            error,
+        )
+        if not dry_run:
+            _save_notification_state(notification_state_path, notification_state)
+        return _retryable_result(
+            dry_run,
+            daily_report_time,
+            retry_interval_minutes,
+            error,
+            notification_state,
+        )
+
+    logger.error("Validation failed after cutoff: %s", error)
+    warning_message = format_warning_telegram_report(str(error))
+    warning_send_result = {"success": False, "reason": "not_sent"}
+    if dry_run:
+        print(warning_message)
+        logger.info("Dry-run Telegram warning preview:\n%s", warning_message)
+    else:
+        warning_send_result = send_message(warning_message)
+        if warning_send_result.get("success"):
+            notification_state["final_failure_sent"] = True
+        _save_notification_state(notification_state_path, notification_state)
+    return _final_failure_result(
+        dry_run,
+        daily_report_time,
+        error,
+        warning_message,
+        warning_send_result,
+        notification_state,
+    )
+
+
+def _publish_daily_report(
+    state,
+    recommendation_preview,
+    dry_run,
+    notification_state,
+    notification_state_path,
+    logger,
+):
+    telegram_message = format_daily_telegram_report(state, recommendation_preview)
+    telegram_send_result = {"success": False, "reason": "dry_run"}
+
+    if dry_run:
+        print(telegram_message)
+        logger.info("Dry-run Telegram report preview:\n%s", telegram_message)
+    else:
+        telegram_send_result = send_message(telegram_message)
+        if telegram_send_result.get("success"):
+            notification_state["telegram_sent"] = True
+            notification_state["sent_at"] = now_iso()
+        _save_notification_state(notification_state_path, notification_state)
+
+    return telegram_message, telegram_send_result
+
+
+def _ready_result(
+    dry_run,
+    daily_report_time,
+    state,
+    recommendation_preview,
+    telegram_message,
+    telegram_send_result,
+    notification_state,
+):
+    return {
+        "status": "ready",
+        "dry_run": dry_run,
+        "daily_report_time": daily_report_time,
+        "telegram_sent": bool(telegram_send_result.get("success")),
+        "telegram_reason": (
+            "Dry run enabled; no Telegram message sent."
+            if dry_run
+            else telegram_send_result.get("message", "")
+        ),
+        "telegram_message": telegram_message,
+        "telegram_send_result": telegram_send_result,
+        "recommendation_preview": recommendation_preview,
+        "notification_state": notification_state,
+        "state": state,
+    }
+
+
 def run_daily_pipeline(
     db_dir=DEFAULT_DB_DIR,
     output=DEFAULT_STATE_PATH,
@@ -91,14 +260,7 @@ def run_daily_pipeline(
 
     if notification_state.get("telegram_sent"):
         logger.info("Daily report already sent for %s; no-op", current_date)
-        return {
-            "status": "already_sent",
-            "dry_run": dry_run,
-            "daily_report_time": daily_report_time,
-            "telegram_sent": False,
-            "telegram_reason": "Daily report already sent for today.",
-            "notification_state": notification_state,
-        }
+        return _already_sent_result(dry_run, daily_report_time, notification_state)
 
     sync_result = sync_garmindb(log_dir=log_dir)
     notification_state["last_attempt_at"] = now_iso()
@@ -110,59 +272,17 @@ def run_daily_pipeline(
             log_dir=log_dir,
         )
     except GarminDBImportError as error:
-        notification_state["retry_count"] = int(
-            notification_state.get("retry_count", 0)
-        ) + 1
-        after_cutoff = _is_after_cutoff(current_time, cutoff_time)
-
-        if after_cutoff:
-            logger.error("Validation failed after cutoff: %s", error)
-            warning_message = format_warning_telegram_report(str(error))
-            warning_send_result = {"success": False, "reason": "not_sent"}
-            if dry_run:
-                print(warning_message)
-                logger.info("Dry-run Telegram warning preview:\n%s", warning_message)
-            else:
-                warning_send_result = send_message(warning_message)
-                if warning_send_result.get("success"):
-                    notification_state["final_failure_sent"] = True
-            if not dry_run:
-                _save_notification_state(notification_state_path, notification_state)
-            return {
-                "status": "final_failure",
-                "retryable": False,
-                "dry_run": dry_run,
-                "daily_report_time": daily_report_time,
-                "telegram_sent": False,
-                "telegram_reason": (
-                    "Validation failed after cutoff; no training recommendation sent."
-                ),
-                "validation_error": str(error),
-                "telegram_message": warning_message,
-                "telegram_send_result": warning_send_result,
-                "notification_state": notification_state,
-            }
-
-        logger.warning(
-            "Validation failed before cutoff; retry in %s minutes: %s",
-            retry_interval_minutes,
+        return _handle_validation_failure(
             error,
+            current_time,
+            cutoff_time,
+            dry_run,
+            daily_report_time,
+            retry_interval_minutes,
+            notification_state,
+            notification_state_path,
+            logger,
         )
-        if not dry_run:
-            _save_notification_state(notification_state_path, notification_state)
-        return {
-            "status": "retryable",
-            "retryable": True,
-            "retry_interval_minutes": retry_interval_minutes,
-            "dry_run": dry_run,
-            "daily_report_time": daily_report_time,
-            "telegram_sent": False,
-            "telegram_reason": (
-                "Validation failed before cutoff; no training recommendation sent."
-            ),
-            "validation_error": str(error),
-            "notification_state": notification_state,
-        }
 
     if validation.get("is_stale") and not allow_stale:
         raise GarminDBImportError("Stale data blocked Telegram publish")
@@ -170,43 +290,28 @@ def run_daily_pipeline(
     state = build_daily_state(db_dir=db_dir, output=output, log_dir=log_dir)
     state["sync"] = sync_result
     state["validation"] = validation
-    recommendation_preview = {
-        "recommendation": state.get("recommendation", ""),
-        "rationale": state.get("rationale", ""),
-        "decision": state.get("decision", {}),
-    }
-    telegram_message = format_daily_telegram_report(state, recommendation_preview)
+    recommendation_preview = _recommendation_preview_from_state(state)
     logger.info("Recommendation preview built: %s", recommendation_preview)
-    telegram_send_result = {"success": False, "reason": "dry_run"}
-
-    if dry_run:
-        print(telegram_message)
-        logger.info("Dry-run Telegram report preview:\n%s", telegram_message)
-    else:
-        telegram_send_result = send_message(telegram_message)
-        if telegram_send_result.get("success"):
-            notification_state["telegram_sent"] = True
-            notification_state["sent_at"] = now_iso()
-        _save_notification_state(notification_state_path, notification_state)
+    telegram_message, telegram_send_result = _publish_daily_report(
+        state,
+        recommendation_preview,
+        dry_run,
+        notification_state,
+        notification_state_path,
+        logger,
+    )
 
     logger.info("Daily pipeline completed telegram_sent=%s", telegram_send_result.get("success"))
 
-    return {
-        "status": "ready",
-        "dry_run": dry_run,
-        "daily_report_time": daily_report_time,
-        "telegram_sent": bool(telegram_send_result.get("success")),
-        "telegram_reason": (
-            "Dry run enabled; no Telegram message sent."
-            if dry_run
-            else telegram_send_result.get("message", "")
-        ),
-        "telegram_message": telegram_message,
-        "telegram_send_result": telegram_send_result,
-        "recommendation_preview": recommendation_preview,
-        "notification_state": notification_state,
-        "state": state,
-    }
+    return _ready_result(
+        dry_run,
+        daily_report_time,
+        state,
+        recommendation_preview,
+        telegram_message,
+        telegram_send_result,
+        notification_state,
+    )
 
 
 def parse_args():

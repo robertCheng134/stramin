@@ -34,13 +34,12 @@ def build_daily_state(db_dir=DEFAULT_DB_DIR, output=DEFAULT_STATE_PATH, log_dir=
         },
         "sleep_hours": health_data.sleep_hours,
         "stress": health_data.stress,
+        "resting_hr": health_data.resting_hr or "",
         "recovery_state": preview["recovery_result"],
         "decision": preview["decision"],
         "recommendation": preview["recommendation"],
         "rationale": preview["rationale"],
     }
-    if health_data.resting_hr not in (None, ""):
-        state["resting_hr"] = health_data.resting_hr
 
     path = write_json_atomic(output, state)
     logger.info("Daily state written atomically: %s", path)

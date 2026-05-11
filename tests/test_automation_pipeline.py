@@ -160,6 +160,56 @@ def test_build_daily_state_writes_atomic_json(tmp_path, monkeypatch):
     assert (log_dir / "pipeline.log").exists()
 
 
+def test_build_daily_state_has_stable_latest_health_contract(tmp_path, monkeypatch):
+    output = tmp_path / "daily_state.json"
+
+    monkeypatch.setattr(
+        build_daily_state_module,
+        "build_recommendation_preview",
+        lambda db_dir: {
+            "health_data": type(
+                "HealthData",
+                (),
+                {
+                    "date": "2026-05-10",
+                    "sleep_hours": "7.0",
+                    "hrv_status": "balanced",
+                    "resting_hr": "",
+                    "stress": "20",
+                },
+            )(),
+            "metadata": {
+                "source_date": "2026-05-10",
+                "metrics": {"hrv_status": {"hrv_value": "42"}},
+            },
+            "recovery_result": {"recovery_score": 80, "recovery_level": "good"},
+            "decision": {"decision": "train"},
+            "recommendation": "train / normal / walking",
+            "rationale": "Ready.",
+        },
+    )
+
+    state = build_daily_state_module.build_daily_state(
+        db_dir=tmp_path,
+        output=output,
+        log_dir=tmp_path / "logs",
+    )
+
+    for key in [
+        "latest_recovery_date",
+        "validation_status",
+        "sleep_hours",
+        "hrv",
+        "stress",
+        "resting_hr",
+        "decision",
+        "recommendation",
+        "rationale",
+    ]:
+        assert key in state
+    assert state["resting_hr"] == ""
+
+
 def test_build_daily_state_reads_garmindb_sleep_for_recovery_date(tmp_path):
     db_dir = tmp_path / "DBs"
     db_dir.mkdir()
