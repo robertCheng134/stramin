@@ -1,26 +1,25 @@
 # AGENTS.md
 
-Guidance for AI coding agents and contributors working on Stramin.
+Guidance for Codex and contributors working on Stramin.
 
-## Mission
+## 1. Mission
 
 Stramin provides reliable Garmin-first recovery and training recommendations
 from local health data. The project values operational transparency, privacy,
 and stable rule-based behavior over clever automation.
 
-## Current Status
+## 2. Current Status
 
-- Branch focus: `feature/garmindb-today-flow`
-- Release track: v4 infrastructure
-- v4 priority: data ingestion, validation, Telegram delivery, deployment, logs
-- v5 direction: AI coaching and richer personalization
+- Branch focus: `feature/garmindb-today-flow`.
+- Release track: v4 infrastructure and production stability.
+- v4 priority: GarminDB ingestion, validation, daily state, Telegram delivery, logging, setup, deployment.
+- v5 direction: AI coaching, richer personalization, and orchestration.
+- Do not add AI coaching features in v4.
 
-Do not add AI coaching features in v4.
-
-## Architecture
+## 3. Architecture Boundaries
 
 ```text
-GarminDB / CSV / Manual entry
+GarminDB / CSV / manual input
         |
         v
 HealthData
@@ -29,103 +28,89 @@ HealthData
         +--> decision_engine.py
         +--> weekly_planner.py
         |
+        +--> daily_state.json
         +--> CLI previews
-        +--> Telegram bot
+        +--> Telegram reports
 ```
 
-Server responsibilities:
+- Garmin is the primary recovery source.
+- GarminDB is the production ingestion backend.
+- Garmin CSV/manual entry remain fallback and development workflows.
+- Strava is activity/training-load context only.
+- GPT/AI is optional narrative context only, not decision authority.
+- `recovery_rules.py`, `decision_engine.py`, and `weekly_planner.py` should stay stable unless explicitly requested.
 
-- run GarminDB sync/import jobs
-- store `~/HealthData`
-- run Telegram bot
-- validate data before publishing recommendations
+## 4. Change Categories
 
-Client/developer responsibilities:
+Safe changes:
 
-- edit code
-- run tests
-- push focused branches
-- keep private data out of git
+- Docs and comments.
+- Local helper extraction.
+- Clearer metadata.
+- Safer fallback handling.
+- Clearer logs, messages, or operator guidance.
 
-## Coding Philosophy
+Requires tests:
 
-- reliability > cleverness
-- explicit/simple code > abstraction-heavy code
-- operational transparency > automation magic
-- preserve existing behavior unless the task explicitly asks to change it
-- add tests for every meaningful ingestion, formatting, or fallback change
+- Ingestion changes.
+- Validation changes.
+- Formatting changes.
+- SQL queries.
+- Fallback behavior.
+- `daily_state.json` contract changes.
+- Telegram behavior.
+- Setup or automation pipeline behavior.
 
-Good example:
+Requires explicit approval:
 
-```python
-if stress < 0:
-    skip_invalid_row()
-```
+- Recovery semantics.
+- Decision engine behavior.
+- HRV meaning or baseline interpretation.
+- Dependency changes.
+- Architecture redesign.
+- Duplicate-send, retry, or validation rule changes.
+- AI coaching or autonomous planning.
+- Destructive git/file operations.
+- Commits or pushes.
 
-Less good:
-
-```python
-normalize_all_metrics_with_hidden_magic()
-```
-
-## Forbidden Changes
+## 5. Forbidden Changes
 
 Do not:
 
-- redesign `recovery_rules.py`
-- redesign `decision_engine.py`
-- redesign `weekly_planner.py`
-- redesign HRV semantics without explicit instruction
-- remove tests
-- introduce fake AI coaching logic
-- auto-run GarminDB sync/download/import from Telegram
-- commit private data, DBs, logs, `.env`, or credentials
+- Remove or weaken tests.
+- Commit `.env`, credentials, logs, databases, or health data.
+- Order GarminDB health tables by `rowid`.
+- Run full GarminDB sync without `--latest`.
+- Auto-run GarminDB sync/download/import from Telegram.
+- Hide sync/validation failures behind silent fallback behavior.
+- Introduce fake AI coaching logic.
+- Replace deterministic rules with GPT output.
+- Rewrite unrelated modules during focused tasks.
 
-Acceptable refactor scope:
+## 6. Testing Expectations
 
-- local helper extraction
-- clearer metadata
-- safer fallback handling
-- docs/tests/scripts that improve operations
-- ingestion-layer changes with tests
-
-## Testing Expectations
-
-Run:
+Default test command:
 
 ```bash
 python3 -m pytest
 ```
 
-For GarminDB work, also run:
+For GarminDB ingestion or recommendation preview work, also run when local DBs are available:
 
 ```bash
 python3 scripts/test_garmindb_today.py --db-dir ~/HealthData/DBs --debug
 python3 scripts/preview_garmindb_recommendation.py --db-dir ~/HealthData/DBs
 ```
 
-Tests must not require real Garmin credentials or real Telegram network calls.
-Use temporary SQLite databases for GarminDB integration tests.
+Testing rules:
 
-## Branch Workflow
+- Use temporary SQLite databases in tests.
+- Do not require real Garmin credentials.
+- Do not make real Telegram network calls.
+- Do not depend on private local health data.
+- Report tests run and results in the handoff.
 
-- Use feature branches.
-- Keep commits focused and reviewable.
-- Do not mix product logic, infra docs, and unrelated refactors in one change.
-- Before handoff, report changed files and test results.
-
-## Deployment Philosophy
-
-Deployment should be boring and inspectable:
-
-- run long jobs in `tmux`
-- validate DB tables before Telegram push
-- write logs to `logs/`
-- generate daily state atomically
-- skip publish on stale or invalid data
-- fail loudly in logs, gently in user-facing output
-
-## GarminDB Operational Notes
+## 7. GarminDB Rules
 
 Paths:
 
@@ -135,36 +120,50 @@ Paths:
 - monitoring DB: `~/HealthData/DBs/garmin_monitoring.db`
 - Stramin virtualenv: `~/stramin/.venv`
 
-Preferred sync command:
+Install and verify:
+
+```bash
+pip install -r requirements.txt
+which garmindb_cli.py
+```
+
+Preferred Stramin-managed sync:
 
 ```bash
 python3 automation/run_garmindb_sync.py
 ```
 
-The Stramin wrapper owns the normal sync command and keeps `--latest` in place.
-Raw `garmindb_cli.py` is an implementation detail and troubleshooting tool
-only. Never run a full GarminDB sync without `--latest`.
+Production daily pipeline:
 
-Known instability:
-
-```text
-garmindb_cli.py --download
-TypeError: argument of type 'NoneType' is not iterable
+```bash
+python3 automation/run_daily_pipeline.py --sync-garmin --db-dir ~/HealthData/DBs
 ```
 
-Use `tmux` for sync jobs. Do not hide GarminDB failures behind silent retries.
+Safety rules:
 
-Raw table ordering rule:
+- Raw `garmindb_cli.py` is troubleshooting detail, not the normal interface.
+- Never run full GarminDB sync without `--latest`.
+- GarminDB schemas can vary; inspect actual SQLite schema before changing SQL.
+- Validate assumptions with real table/column checks where practical.
+- Keep GarminDB-specific assumptions documented.
 
-- GarminDB raw tables `hrv` and `sleep` are usable.
-- Do not order GarminDB health tables by `rowid`.
-- `rowid` does not represent chronological order after bulk import/analyze.
-- Always order by the business date column:
+Ordering rules:
+
+- Never order GarminDB health tables by `rowid`.
+- `rowid` is not chronological after bulk import/analyze.
+- Always order by business date columns:
   - `hrv.day`
   - `sleep.day`
   - `daily_summary.day`
 
-Verified latest-data query examples:
+Freshness rules:
+
+- v4 validates readiness from `daily_summary.day`.
+- Latest finalized Garmin recovery data may be yesterday.
+- Today and yesterday are accepted.
+- Older data is too stale for automatic Telegram recommendations.
+
+Useful inspection queries:
 
 ```bash
 sqlite3 ~/HealthData/DBs/garmin.db "select day, last_night_avg, status from hrv order by day desc limit 1;"
@@ -172,11 +171,30 @@ sqlite3 ~/HealthData/DBs/garmin.db "select day, total_sleep from sleep order by 
 sqlite3 ~/HealthData/DBs/garmin.db "select day, rhr, stress_avg, bb_charged from daily_summary order by day desc limit 1;"
 ```
 
-Latest finalized Garmin recovery data can be yesterday. This is normal and is
-accepted by v4 validation; older data should be treated as too stale for
-automatic recommendations.
+Known GarminDB instability:
 
-## tmux Workflow
+```text
+garmindb_cli.py --download
+TypeError: argument of type 'NoneType' is not iterable
+```
+
+Known CLI rule:
+
+- `garmindb_cli.py --download --latest` may fail unless combined with `--all`.
+
+Use the Stramin wrapper and keep failures visible.
+
+## 8. Deployment / Runtime Rules
+
+- Use `tmux` for long-running sync or pipeline runs until systemd is intentionally added.
+- Validate DB data before publishing Telegram recommendations.
+- Write runtime logs to `logs/`.
+- Write `daily_state.json` atomically.
+- Do not send Telegram recommendations on stale or invalid data.
+- Prevent duplicate Telegram reports for the same local date.
+- Dry-run must never send Telegram or mark `telegram_sent=true`.
+
+tmux example:
 
 ```bash
 tmux new -s stramin-sync
@@ -184,19 +202,13 @@ source ~/stramin/.venv/bin/activate
 python3 automation/run_daily_pipeline.py --sync-garmin --db-dir ~/HealthData/DBs
 ```
 
-Detach:
-
-```text
-Ctrl-b d
-```
-
-Reattach:
+Detach with `Ctrl-b d`; reattach with:
 
 ```bash
 tmux attach -t stramin-sync
 ```
 
-## Data Privacy Rules
+## 9. Data Privacy Rules
 
 Never commit:
 
@@ -210,29 +222,17 @@ Never commit:
 - `data/garmin_health.csv`
 - `~/.GarminDb/GarminConnectConfig.json`
 
-Health data and logs are private runtime artifacts.
+Also avoid printing secret values in logs, tests, docs, or CLI output.
 
-GarminDB CLI is unstable for automated sync usage.
-Prefer controlled wrapper logic or internalized integration in v4+.
-## GarminDB Usage Rule
+## 10. Definition of Done
 
-GarminDB behavior and schema are unstable across versions.
+Before handoff:
 
-Before modifying:
-- automation/
-- integrations/garmindb.py
-- validation logic
-- GarminDB SQL queries
-- sync commands
-
-the agent MUST:
-1. Re-check the current GarminDB README and CLI help.
-2. Verify actual local SQLite schema instead of assuming columns.
-3. Prefer validation through real DB inspection over assumptions.
-4. Treat GarminDB CLI as unreliable for production automation.
-5. Keep all GarminDB-specific assumptions documented.
-
-Known issue:
-`garmindb_cli.py --download --latest`
-may fail unless combined with:
-`--all`
+- Changed files are reported.
+- Relevant tests are run.
+- Test results are reported.
+- No private data is added.
+- Behavior changes are explicitly stated.
+- Risky assumptions are documented.
+- Product behavior is preserved unless explicitly changed.
+- No commit is created unless explicitly requested.
