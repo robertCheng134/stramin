@@ -157,9 +157,13 @@ enough to trust.
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+which garmindb_cli.py
 cp .env.example .env
 python3 -m pytest
 ```
+
+`garmindb` is installed from `requirements.txt` as Stramin's Garmin ingestion
+backend. `which garmindb_cli.py` should resolve inside the active virtualenv.
 
 Useful local checks:
 

@@ -13,6 +13,24 @@ Operational notes for running GarminDB with Stramin v4.
 `GARMINDB_PATH` points to a local SQLite file. It is not a Garmin username,
 password, token, or credential.
 
+## Installation Check
+
+GarminDB is installed through Stramin's project dependencies:
+
+```bash
+cd ~/stramin
+source .venv/bin/activate
+pip install -r requirements.txt
+which garmindb_cli.py
+```
+
+`which garmindb_cli.py` should resolve inside `~/stramin/.venv`. If it does
+not, reinstall dependencies before running sync:
+
+```bash
+pip install -r requirements.txt
+```
+
 ## Preferred Sync Command
 
 Use the Stramin-managed GarminDB sync wrapper:

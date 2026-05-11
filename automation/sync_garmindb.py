@@ -7,7 +7,7 @@ def sync_garmindb(log_dir=DEFAULT_LOG_DIR):
     """Record the sync step without running GarminDB automatically.
 
     v4 keeps GarminDB sync operator-controlled. The preferred command is:
-    garmindb_cli.py --all --download --import --analyze --latest
+    python3 automation/run_garmindb_sync.py
     """
 
     ensure_log_dir(log_dir)
@@ -20,7 +20,7 @@ def sync_garmindb(log_dir=DEFAULT_LOG_DIR):
         "started_at": now_iso(),
         "message": (
             "GarminDB sync is manual in v4. Run "
-            "garmindb_cli.py --all --download --import --analyze --latest in tmux."
+            "python3 automation/run_garmindb_sync.py in tmux."
         ),
     }
 

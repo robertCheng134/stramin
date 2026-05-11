@@ -164,6 +164,21 @@ def test_run_garmindb_sync_failure_returns_nonzero(monkeypatch, capsys):
     assert "failed with exit code 7" in capsys.readouterr().out
 
 
+def test_run_garmindb_sync_missing_cli_returns_clear_error(monkeypatch, capsys):
+    def fake_run(command, timeout, check):
+        raise FileNotFoundError("garmindb_cli.py")
+
+    monkeypatch.setattr(run_garmindb_sync_module.subprocess, "run", fake_run)
+
+    exit_code = run_garmindb_sync_module.run_garmindb_sync(timeout=42)
+
+    assert exit_code == 127
+    assert (
+        "GarminDB CLI not found. Install dependencies with "
+        "pip install -r requirements.txt."
+    ) in capsys.readouterr().out
+
+
 def test_build_daily_state_writes_atomic_json(tmp_path, monkeypatch):
     output = tmp_path / "daily_state.json"
     log_dir = tmp_path / "logs"

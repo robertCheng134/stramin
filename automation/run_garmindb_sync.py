@@ -24,6 +24,12 @@ def run_garmindb_sync(timeout=DEFAULT_TIMEOUT_SECONDS):
 
     try:
         subprocess.run(command, timeout=timeout, check=True)
+    except FileNotFoundError:
+        print(
+            "GarminDB CLI not found. Install dependencies with "
+            "pip install -r requirements.txt."
+        )
+        return 127
     except subprocess.TimeoutExpired:
         print(f"GarminDB sync failed: timed out after {timeout} seconds.")
         return 124
