@@ -527,6 +527,11 @@ def test_run_daily_pipeline_noops_when_report_already_sent_today(
         raise AssertionError("pipeline should no-op before validation")
 
     monkeypatch.setattr(run_daily_pipeline_module, "validate_garmindb", fail_if_called)
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "run_garmindb_sync",
+        lambda: pytest.fail("duplicate no-op must not sync GarminDB"),
+    )
 
     result = run_daily_pipeline_module.run_daily_pipeline(
         db_dir=tmp_path,
@@ -534,11 +539,139 @@ def test_run_daily_pipeline_noops_when_report_already_sent_today(
         log_dir=tmp_path / "logs",
         notification_state_path=notification_state,
         current_datetime=datetime.fromisoformat("2026-05-10T09:30:00+08:00"),
+        sync_garmin=True,
     )
 
     assert result["status"] == "already_sent"
     assert result["telegram_sent"] is False
     assert "already sent" in result["telegram_reason"]
+
+
+def test_run_daily_pipeline_default_does_not_run_managed_sync(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "run_garmindb_sync",
+        lambda: pytest.fail("managed sync should only run with sync_garmin=True"),
+    )
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "sync_garmindb",
+        lambda log_dir: {"status": "skipped_manual_sync_required"},
+    )
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "validate_garmindb",
+        lambda **kwargs: {
+            "status": "ready",
+            "latest_recovery_date": "2026-05-10",
+            "is_stale": False,
+        },
+    )
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "build_daily_state",
+        lambda **kwargs: {
+            "latest_recovery_date": "2026-05-10",
+            "sleep_hours": "7.0",
+            "hrv": {"hrv_value": "42", "hrv_unit": "ms", "hrv_balance": "stable"},
+            "stress": "20",
+            "resting_hr": "58",
+            "recommendation": "train / normal / walking",
+            "rationale": "Ready.",
+            "decision": {"decision": "train"},
+        },
+    )
+
+    result = run_daily_pipeline_module.run_daily_pipeline(
+        db_dir=tmp_path,
+        output=tmp_path / "daily_state.json",
+        log_dir=tmp_path / "logs",
+        notification_state_path=tmp_path / "notification_state.json",
+        dry_run=True,
+        current_datetime=datetime.fromisoformat("2026-05-10T09:00:00+08:00"),
+    )
+
+    assert result["status"] == "ready"
+    assert result["state"]["sync"]["status"] == "skipped_manual_sync_required"
+
+
+def test_run_daily_pipeline_sync_garmin_runs_before_validation(tmp_path, monkeypatch):
+    call_order = []
+
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "run_garmindb_sync",
+        lambda: call_order.append("sync") or 0,
+    )
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "validate_garmindb",
+        lambda **kwargs: call_order.append("validation")
+        or {
+            "status": "ready",
+            "latest_recovery_date": "2026-05-10",
+            "is_stale": False,
+        },
+    )
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "build_daily_state",
+        lambda **kwargs: {
+            "latest_recovery_date": "2026-05-10",
+            "sleep_hours": "7.0",
+            "hrv": {"hrv_value": "42", "hrv_unit": "ms", "hrv_balance": "stable"},
+            "stress": "20",
+            "resting_hr": "58",
+            "recommendation": "train / normal / walking",
+            "rationale": "Ready.",
+            "decision": {"decision": "train"},
+        },
+    )
+
+    result = run_daily_pipeline_module.run_daily_pipeline(
+        db_dir=tmp_path,
+        output=tmp_path / "daily_state.json",
+        log_dir=tmp_path / "logs",
+        notification_state_path=tmp_path / "notification_state.json",
+        dry_run=True,
+        sync_garmin=True,
+        current_datetime=datetime.fromisoformat("2026-05-10T09:00:00+08:00"),
+    )
+
+    assert result["status"] == "ready"
+    assert result["state"]["sync"]["status"] == "completed"
+    assert call_order[:2] == ["sync", "validation"]
+
+
+def test_run_daily_pipeline_sync_failure_prevents_validation_and_telegram(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(run_daily_pipeline_module, "run_garmindb_sync", lambda: 7)
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "validate_garmindb",
+        lambda **kwargs: pytest.fail("validation must not run after sync failure"),
+    )
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "send_message",
+        lambda text: pytest.fail("Telegram must not send after sync failure"),
+    )
+
+    result = run_daily_pipeline_module.run_daily_pipeline(
+        db_dir=tmp_path,
+        output=tmp_path / "daily_state.json",
+        log_dir=tmp_path / "logs",
+        notification_state_path=tmp_path / "notification_state.json",
+        sync_garmin=True,
+        current_datetime=datetime.fromisoformat("2026-05-10T09:00:00+08:00"),
+    )
+
+    assert result["status"] == "sync_failed"
+    assert result["retryable"] is True
+    assert result["telegram_sent"] is False
+    assert result["sync"]["exit_code"] == 7
 
 
 def test_run_daily_pipeline_builds_state_without_telegram(tmp_path, monkeypatch):
@@ -604,6 +737,55 @@ def test_run_daily_pipeline_builds_state_without_telegram(tmp_path, monkeypatch)
     assert result["notification_state"]["telegram_sent"] is False
     assert not (tmp_path / "notification_state.json").exists()
     assert (log_dir / "pipeline.log").exists()
+
+
+def test_run_daily_pipeline_dry_run_with_sync_does_not_send_telegram(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(run_daily_pipeline_module, "run_garmindb_sync", lambda: 0)
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "validate_garmindb",
+        lambda **kwargs: {
+            "status": "ready",
+            "latest_recovery_date": "2026-05-10",
+            "is_stale": False,
+        },
+    )
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "build_daily_state",
+        lambda **kwargs: {
+            "latest_recovery_date": "2026-05-10",
+            "sleep_hours": "7.0",
+            "hrv": {"hrv_value": "42", "hrv_unit": "ms", "hrv_balance": "stable"},
+            "stress": "20",
+            "resting_hr": "58",
+            "recommendation": "train / normal / walking",
+            "rationale": "Ready.",
+            "decision": {"decision": "train"},
+        },
+    )
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "send_message",
+        lambda text: pytest.fail("dry-run + sync must not send Telegram"),
+    )
+
+    result = run_daily_pipeline_module.run_daily_pipeline(
+        db_dir=tmp_path,
+        output=tmp_path / "daily_state.json",
+        log_dir=tmp_path / "logs",
+        notification_state_path=tmp_path / "notification_state.json",
+        dry_run=True,
+        sync_garmin=True,
+        current_datetime=datetime.fromisoformat("2026-05-10T09:00:00+08:00"),
+    )
+
+    assert result["status"] == "ready"
+    assert result["telegram_sent"] is False
+    assert result["state"]["sync"]["status"] == "completed"
 
 
 def test_run_daily_pipeline_successful_send_marks_telegram_sent(
@@ -739,6 +921,7 @@ def test_main_prints_actual_telegram_sent_result(monkeypatch, capsys):
             "notification_state": "notification_state.json",
             "allow_stale": False,
             "dry_run": False,
+            "sync_garmin": False,
             "daily_report_time": "09:00",
             "retry_interval_minutes": 5,
             "cutoff_time": "11:00",
@@ -775,6 +958,7 @@ def test_main_prints_false_for_dry_run_result(monkeypatch, capsys):
             "notification_state": "notification_state.json",
             "allow_stale": False,
             "dry_run": True,
+            "sync_garmin": False,
             "daily_report_time": "09:00",
             "retry_interval_minutes": 5,
             "cutoff_time": "11:00",

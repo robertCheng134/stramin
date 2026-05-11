@@ -10,6 +10,7 @@ from build_daily_state import build_daily_state
 from common import DEFAULT_DB_DIR, DEFAULT_LOG_DIR, DEFAULT_NOTIFICATION_STATE_PATH
 from common import DEFAULT_STATE_PATH, get_file_logger, now_iso, today_iso
 from common import write_json_atomic
+from run_garmindb_sync import run_garmindb_sync
 from sync_garmindb import sync_garmindb
 from validate_health_data import validate_garmindb
 
@@ -60,6 +61,28 @@ def _save_notification_state(path, state):
     return write_json_atomic(path.expanduser(), state)
 
 
+def _run_sync_step(sync_garmin, log_dir, logger):
+    if not sync_garmin:
+        return sync_garmindb(log_dir=log_dir)
+
+    logger.info("Managed GarminDB latest sync started")
+    exit_code = run_garmindb_sync()
+    if exit_code != 0:
+        logger.error("Managed GarminDB latest sync failed exit_code=%s", exit_code)
+        return {
+            "status": "failed",
+            "exit_code": exit_code,
+            "message": "Managed GarminDB latest sync failed.",
+        }
+
+    logger.info("Managed GarminDB latest sync completed")
+    return {
+        "status": "completed",
+        "exit_code": 0,
+        "message": "Managed GarminDB latest sync completed.",
+    }
+
+
 def _recommendation_preview_from_state(state):
     return {
         "recommendation": state.get("recommendation", ""),
@@ -75,6 +98,19 @@ def _already_sent_result(dry_run, daily_report_time, notification_state):
         "daily_report_time": daily_report_time,
         "telegram_sent": False,
         "telegram_reason": "Daily report already sent for today.",
+        "notification_state": notification_state,
+    }
+
+
+def _sync_failed_result(dry_run, daily_report_time, sync_result, notification_state):
+    return {
+        "status": "sync_failed",
+        "retryable": True,
+        "dry_run": dry_run,
+        "daily_report_time": daily_report_time,
+        "telegram_sent": False,
+        "telegram_reason": "GarminDB sync failed; no Telegram message sent.",
+        "sync": sync_result,
         "notification_state": notification_state,
     }
 
@@ -240,6 +276,7 @@ def run_daily_pipeline(
     retry_interval_minutes=DEFAULT_RETRY_INTERVAL_MINUTES,
     cutoff_time=DEFAULT_RETRY_CUTOFF_TIME,
     current_datetime=None,
+    sync_garmin=False,
 ):
     load_dotenv(".env")
     logger = get_file_logger("pipeline", log_dir)
@@ -262,7 +299,15 @@ def run_daily_pipeline(
         logger.info("Daily report already sent for %s; no-op", current_date)
         return _already_sent_result(dry_run, daily_report_time, notification_state)
 
-    sync_result = sync_garmindb(log_dir=log_dir)
+    sync_result = _run_sync_step(sync_garmin, log_dir, logger)
+    if sync_result.get("status") == "failed":
+        return _sync_failed_result(
+            dry_run,
+            daily_report_time,
+            sync_result,
+            notification_state,
+        )
+
     notification_state["last_attempt_at"] = now_iso()
 
     try:
@@ -325,6 +370,11 @@ def parse_args():
         help="Path to notification state JSON.",
     )
     parser.add_argument("--allow-stale", action="store_true")
+    parser.add_argument(
+        "--sync-garmin",
+        action="store_true",
+        help="Run managed GarminDB latest sync before validation.",
+    )
     parser.add_argument("--daily-report-time", default=DEFAULT_DAILY_REPORT_TIME)
     parser.add_argument("--cutoff-time", default=DEFAULT_RETRY_CUTOFF_TIME)
     parser.add_argument(
@@ -353,6 +403,7 @@ def main():
             daily_report_time=args.daily_report_time,
             retry_interval_minutes=args.retry_interval_minutes,
             cutoff_time=args.cutoff_time,
+            sync_garmin=args.sync_garmin,
         )
     except GarminDBImportError as error:
         print(f"Daily pipeline failed: {error}")
@@ -371,6 +422,12 @@ def main():
     if result["status"] == "already_sent":
         print("Daily pipeline no-op: report already sent for today")
         return 0
+    if result["status"] == "sync_failed":
+        print(
+            "Daily pipeline sync failed: "
+            f"exit_code={result['sync'].get('exit_code')}; telegram_sent=false"
+        )
+        return result["sync"].get("exit_code") or 1
     print(
         "Daily pipeline ready: "
         f"latest_recovery_date={result['state']['latest_recovery_date']}; "
