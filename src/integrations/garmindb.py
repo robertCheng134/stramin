@@ -1146,7 +1146,7 @@ def _read_garmin_metrics(garmin_path, start_date=None):
             start_date=start_date,
             target_date=target_date,
         )
-        if not source_date and raw_sleep.get("value"):
+        if not metrics["sleep_hours"].get("value") and raw_sleep.get("value"):
             metrics["sleep_hours"] = raw_sleep
 
         raw_stress = _latest_stress_metric(

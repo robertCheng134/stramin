@@ -160,6 +160,58 @@ def test_build_daily_state_writes_atomic_json(tmp_path, monkeypatch):
     assert (log_dir / "pipeline.log").exists()
 
 
+def test_build_daily_state_reads_garmindb_sleep_for_recovery_date(tmp_path):
+    db_dir = tmp_path / "DBs"
+    db_dir.mkdir()
+    with sqlite3.connect(db_dir / "garmin.db") as connection:
+        connection.execute(
+            """
+            CREATE TABLE daily_summary (
+                day DATETIME NOT NULL PRIMARY KEY,
+                rhr INTEGER,
+                stress_avg INTEGER,
+                bb_charged INTEGER
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE sleep (
+                day DATETIME NOT NULL PRIMARY KEY,
+                total_sleep TIME NOT NULL,
+                score INTEGER,
+                avg_stress FLOAT,
+                qualifier VARCHAR
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO daily_summary (day, rhr, stress_avg, bb_charged)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("2026-05-10 00:00:00.000000", 59, 20, 70),
+        )
+        connection.execute(
+            """
+            INSERT INTO sleep (day, total_sleep, score, avg_stress, qualifier)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            ("2026-05-10 00:00:00.000000", "07:26:00.000000", 87, 20.0, "GOOD"),
+        )
+
+    output = tmp_path / "daily_state.json"
+    state = build_daily_state_module.build_daily_state(
+        db_dir=db_dir,
+        output=output,
+        log_dir=tmp_path / "logs",
+    )
+
+    assert state["latest_recovery_date"] == "2026-05-10"
+    assert state["sleep_hours"] == "7.43"
+    assert json.loads(output.read_text(encoding="utf-8"))["sleep_hours"] == "7.43"
+
+
 def test_validate_garmindb_fails_missing_database(tmp_path):
     with pytest.raises(
         validate_health_data_module.GarminDBImportError,
