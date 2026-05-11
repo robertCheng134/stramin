@@ -42,6 +42,15 @@ source .venv/bin/activate
 python3 automation/run_garmindb_sync.py
 ```
 
+The default timeout is for daily incremental syncs. First-run GarminDB
+bootstrap can take much longer while monitoring data downloads, imports,
+analyzes, and SQLite processing complete. For bootstrap, explicitly disable the
+timeout:
+
+```bash
+python3 automation/run_garmindb_sync.py --timeout 0
+```
+
 Detach with `Ctrl-b d`.
 
 Reattach:

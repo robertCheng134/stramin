@@ -23,7 +23,10 @@ def run_garmindb_sync(timeout=DEFAULT_TIMEOUT_SECONDS):
     print("Command: " + " ".join(command))
 
     try:
-        subprocess.run(command, timeout=timeout, check=True)
+        if timeout <= 0:
+            subprocess.run(command, check=True)
+        else:
+            subprocess.run(command, timeout=timeout, check=True)
     except FileNotFoundError:
         print(
             "GarminDB CLI not found. Install dependencies with "
@@ -47,7 +50,7 @@ def parse_args():
         "--timeout",
         type=int,
         default=DEFAULT_TIMEOUT_SECONDS,
-        help="Sync timeout in seconds. Default: 1800.",
+        help="Sync timeout in seconds. Use 0 or less for no timeout. Default: 1800.",
     )
     return parser.parse_args()
 

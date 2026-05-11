@@ -181,6 +181,14 @@ python3 automation/run_garmindb_sync.py
 
 This wrapper intentionally runs GarminDB with `--latest`. Do not run a full
 GarminDB history sync without `--latest` during normal production operation.
+The default timeout is intended for daily incremental syncs.
+
+For first-run GarminDB bootstrap, local import/analyze can take much longer.
+Disable the wrapper timeout explicitly:
+
+```bash
+python3 automation/run_garmindb_sync.py --timeout 0
+```
 
 Run the real Telegram publish path only after dry-run output looks correct:
 
@@ -255,6 +263,12 @@ tmux new -s stramin-sync
 cd ~/stramin
 source .venv/bin/activate
 python3 automation/run_garmindb_sync.py
+```
+
+For first-run bootstrap inside `tmux`, use:
+
+```bash
+python3 automation/run_garmindb_sync.py --timeout 0
 ```
 
 Detach with `Ctrl-b d`; reattach with:

@@ -149,6 +149,44 @@ def test_run_garmindb_sync_success_returns_zero(monkeypatch, capsys):
     assert "completed successfully" in capsys.readouterr().out
 
 
+def test_run_garmindb_sync_timeout_zero_disables_timeout(monkeypatch):
+    calls = []
+
+    def fake_run(*args, **kwargs):
+        calls.append({"args": args, "kwargs": kwargs})
+
+    monkeypatch.setattr(run_garmindb_sync_module.subprocess, "run", fake_run)
+
+    exit_code = run_garmindb_sync_module.run_garmindb_sync(timeout=0)
+
+    assert exit_code == 0
+    assert calls == [
+        {
+            "args": (run_garmindb_sync_module.build_sync_command(),),
+            "kwargs": {"check": True},
+        }
+    ]
+
+
+def test_run_garmindb_sync_positive_timeout_passes_timeout(monkeypatch):
+    calls = []
+
+    def fake_run(*args, **kwargs):
+        calls.append({"args": args, "kwargs": kwargs})
+
+    monkeypatch.setattr(run_garmindb_sync_module.subprocess, "run", fake_run)
+
+    exit_code = run_garmindb_sync_module.run_garmindb_sync(timeout=42)
+
+    assert exit_code == 0
+    assert calls == [
+        {
+            "args": (run_garmindb_sync_module.build_sync_command(),),
+            "kwargs": {"timeout": 42, "check": True},
+        }
+    ]
+
+
 def test_run_garmindb_sync_failure_returns_nonzero(monkeypatch, capsys):
     def fake_run(command, timeout, check):
         raise run_garmindb_sync_module.subprocess.CalledProcessError(
