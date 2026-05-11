@@ -4,6 +4,8 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from build_daily_state import build_daily_state
 from common import DEFAULT_DB_DIR, DEFAULT_LOG_DIR, DEFAULT_NOTIFICATION_STATE_PATH
 from common import DEFAULT_STATE_PATH, get_file_logger, now_iso, today_iso
@@ -70,6 +72,7 @@ def run_daily_pipeline(
     cutoff_time=DEFAULT_RETRY_CUTOFF_TIME,
     current_datetime=None,
 ):
+    load_dotenv(".env")
     logger = get_file_logger("pipeline", log_dir)
     logger.info(
         "Daily pipeline started dry_run=%s report_time=%s cutoff_time=%s",

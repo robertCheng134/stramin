@@ -558,3 +558,63 @@ def test_run_daily_pipeline_successful_send_marks_telegram_sent(
     written_state = json.loads(notification_state.read_text(encoding="utf-8"))
     assert written_state["telegram_sent"] is True
     assert written_state["sent_at"]
+
+
+def test_run_daily_pipeline_loads_dotenv_before_telegram_send(tmp_path, monkeypatch):
+    call_order = []
+
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "load_dotenv",
+        lambda path: call_order.append(("dotenv", path)) or True,
+    )
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "sync_garmindb",
+        lambda log_dir: {"status": "skipped_manual_sync_required"},
+    )
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "validate_garmindb",
+        lambda **kwargs: {
+            "status": "ready",
+            "latest_recovery_date": "2026-05-10",
+            "is_stale": False,
+        },
+    )
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "build_daily_state",
+        lambda **kwargs: {
+            "latest_recovery_date": "2026-05-10",
+            "sleep_hours": "7.0",
+            "hrv": {"hrv_value": "42", "hrv_unit": "ms", "hrv_balance": "stable"},
+            "stress": "20",
+            "resting_hr": "58",
+            "recommendation": "train / normal / walking",
+            "rationale": "Ready.",
+            "decision": {
+                "decision": "train",
+                "intensity": "normal",
+                "suggested_activity": "walking",
+            },
+        },
+    )
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "send_message",
+        lambda text: call_order.append(("send", text))
+        or {"success": True, "message": "sent"},
+    )
+
+    result = run_daily_pipeline_module.run_daily_pipeline(
+        db_dir=tmp_path,
+        output=tmp_path / "daily_state.json",
+        log_dir=tmp_path / "logs",
+        notification_state_path=tmp_path / "notification_state.json",
+        current_datetime=datetime.fromisoformat("2026-05-10T09:00:00+08:00"),
+    )
+
+    assert result["telegram_sent"] is True
+    assert call_order[0] == ("dotenv", ".env")
+    assert call_order[1][0] == "send"
