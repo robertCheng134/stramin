@@ -23,6 +23,7 @@ def _load_module(name):
 
 build_daily_state_module = _load_module("build_daily_state")
 run_daily_pipeline_module = _load_module("run_daily_pipeline")
+run_garmindb_sync_module = _load_module("run_garmindb_sync")
 validate_health_data_module = _load_module("validate_health_data")
 
 
@@ -104,6 +105,63 @@ def _create_valid_garmindb(db_dir, day="2026-05-10"):
             (f"{day} 00:00:00",),
         )
     return db_path
+
+
+def test_garmindb_sync_command_is_latest_only():
+    command = run_garmindb_sync_module.build_sync_command()
+
+    assert command == [
+        "garmindb_cli.py",
+        "--all",
+        "--download",
+        "--import",
+        "--analyze",
+        "--latest",
+    ]
+    assert "--latest" in command
+
+
+def test_garmindb_sync_command_includes_required_steps():
+    command = run_garmindb_sync_module.build_sync_command()
+
+    for flag in ["--all", "--download", "--import", "--analyze"]:
+        assert flag in command
+
+
+def test_run_garmindb_sync_success_returns_zero(monkeypatch, capsys):
+    calls = []
+
+    def fake_run(command, timeout, check):
+        calls.append({"command": command, "timeout": timeout, "check": check})
+
+    monkeypatch.setattr(run_garmindb_sync_module.subprocess, "run", fake_run)
+
+    exit_code = run_garmindb_sync_module.run_garmindb_sync(timeout=42)
+
+    assert exit_code == 0
+    assert calls == [
+        {
+            "command": run_garmindb_sync_module.build_sync_command(),
+            "timeout": 42,
+            "check": True,
+        }
+    ]
+    assert "completed successfully" in capsys.readouterr().out
+
+
+def test_run_garmindb_sync_failure_returns_nonzero(monkeypatch, capsys):
+    def fake_run(command, timeout, check):
+        raise run_garmindb_sync_module.subprocess.CalledProcessError(
+            returncode=7,
+            cmd=command,
+        )
+
+    monkeypatch.setattr(run_garmindb_sync_module.subprocess, "run", fake_run)
+
+    exit_code = run_garmindb_sync_module.run_garmindb_sync(timeout=42)
+
+    assert exit_code == 7
+    assert "failed with exit code 7" in capsys.readouterr().out
 
 
 def test_build_daily_state_writes_atomic_json(tmp_path, monkeypatch):
