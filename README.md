@@ -1,13 +1,157 @@
 # Stramin
 
-Garmin-first recovery and training recommendation infrastructure.
+Stramin is an adaptive recovery operating system for training decisions.
 
-Stramin turns local Garmin health data, optional Strava activity context, and a
-small rule-based decision engine into daily training recommendations. v4 focuses
-on reliable data ingestion, server operation, Telegram delivery, and safe
-automation. v5 is reserved for richer AI coaching.
+It is Garmin-first, automation-first, and reliability-first. The goal is not to
+produce motivational text. The goal is to safely decide whether today is a day
+to train, go light, recover, or rest based on validated health data.
 
-## 🚀 Quick Start
+## What Is Stramin?
+
+Stramin turns finalized Garmin recovery signals into daily training guidance.
+It treats recovery data as operational infrastructure: data must be present,
+fresh enough, validated, and delivered through a dependable workflow before it
+becomes a recommendation.
+
+Product identity:
+
+- adaptive recovery platform
+- Garmin-first health automation
+- rule-based daily recommendation engine
+- Telegram delivery layer
+- local-first operational system for private health data
+
+Garmin is the source of truth for v4. Strava, GPT, CSV, and manual entry are
+supporting paths, not the core production path.
+
+## Why It Exists
+
+Most training decisions are reactive. People look at how they feel after
+training has already gone sideways. Recovery signals exist, but they are often
+ignored, scattered across apps, or unavailable at the exact moment a decision is
+needed.
+
+Health platforms are also operationally fragile:
+
+- Garmin finalized sleep, HRV, and recovery data can lag into the morning.
+- Local sync/import tools can fail or produce stale-looking rows.
+- Raw health database tables may not be ordered the way humans expect.
+- Automated notifications are risky if they send before validation passes.
+
+Stramin exists because automation reliability matters. A training
+recommendation should not be sent just because a cron job fired. It should be
+sent only when the health data is ready.
+
+## Core System Philosophy
+
+- **Validation-first:** no validated data, no training recommendation.
+- **Graceful degradation:** if data is not ready, retry or warn instead of
+  pretending.
+- **Garmin as source of truth:** v4 production recommendations are anchored on
+  GarminDB finalized health data.
+- **Rule-based reliability before AI autonomy:** deterministic safety comes
+  before narrative intelligence.
+- **Infrastructure-first v4:** sync, validation, retries, duplicate prevention,
+  logs, and Telegram delivery are the product surface.
+
+AI is deliberately optional. Stramin should remain useful when GPT is missing,
+disabled, or unavailable.
+
+## Operational Architecture
+
+```text
+Garmin Connect
+      |
+      v
+GarminDB local SQLite
+      |
+      v
+Validation gate
+      |
+      v
+Recovery analysis
+      |
+      v
+Recommendation generation
+      |
+      v
+Telegram delivery
+      |
+      v
+Retry and duplicate prevention
+```
+
+The production path is intentionally boring: local files, explicit validation,
+synchronous scripts, atomic state, and plain logs.
+
+## Production Reliability Features
+
+- stale-data detection
+- Garmin finalized-data lag handling
+- retry architecture for morning readiness
+- duplicate Telegram report prevention
+- dry-run safety
+- atomic `daily_state.json` generation
+- `data/notification_state.json` publish tracking
+- graceful fallback behavior
+- clear failure logging
+
+Garmin finalized recovery data can be yesterday. That is normal and accepted by
+v4 validation. Data older than yesterday is treated as too stale for automatic
+recommendations.
+
+## Current Platform Capabilities
+
+- GarminDB ingestion from local SQLite databases
+- recovery score and recovery level analysis
+- adaptive daily recommendation
+- Telegram daily report publishing
+- automation pipeline with retry-aware readiness handling
+- duplicate-send protection
+- dry-run Telegram preview
+- weekly planning and dynamic adaptation foundations
+- optional Strava training-load context
+- optional GPT explanation layer
+
+## GarminDB Production Notes
+
+Stramin reads GarminDB from local SQLite files, usually:
+
+```text
+~/HealthData/DBs/garmin.db
+~/HealthData/DBs/garmin_monitoring.db
+```
+
+GarminDB credentials do not live in Stramin. They belong in:
+
+```text
+~/.GarminDb/GarminConnectConfig.json
+```
+
+Important production rule: do not order GarminDB health tables by `rowid`.
+After bulk import/analyze, `rowid` does not represent chronological order.
+Always order by business date columns:
+
+- `hrv.day`
+- `sleep.day`
+- `daily_summary.day`
+
+See [GarminDB operations](docs/garmindb-operations.md) for sync commands,
+validation queries, and known GarminDB issues.
+
+## AI Philosophy
+
+AI is optional augmentation, not the control plane.
+
+v4 keeps recommendation safety deterministic. GPT may explain a recommendation
+when available, but it must not replace validation, freshness checks, recovery
+rules, or decision engine semantics.
+
+v5 is reserved for orchestration, richer coaching, and safer personalization.
+That work is intentionally postponed until the operational foundation is boring
+enough to trust.
+
+## Developer Setup
 
 ```bash
 python3 -m venv .venv
@@ -15,259 +159,157 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 python3 -m pytest
-python3 scripts/preview_garmindb_recommendation.py --db-dir ~/HealthData/DBs
 ```
 
-Manual Garmin CSV flow is still available:
-
-```bash
-python3 src/morning_check.py
-python3 src/main.py
-python3 src/add_garmin_entry.py
-```
-
-## 🧭 What Stramin Is
-
-Stramin is a practical training assistant, not a medical device. It currently
-does four things:
-
-- imports Garmin health data from CSV or GarminDB
-- calculates recovery score and training decisions with explicit rules
-- optionally uses Strava for activity load
-- exposes CLI and Telegram interfaces
-
-It does not automatically sync GarminDB yet, and it does not rely on AI for core
-decisions.
-
-## 📦 v4 Scope
-
-v4 is an infrastructure release:
-
-- GarminDB latest health ingestion
-- Telegram `/today` product-facing output
-- CLI preview tools
-- local server deployment hygiene
-- validation before recommendations
-- privacy-safe runtime defaults
-
-v5 will focus on AI coaching, narrative personalization, and richer adaptive
-training suggestions. Do not add fake AI behavior to v4.
-
-## 🏗️ Architecture
-
-```text
-MacBook / Garmin Connect
-        |
-        | GarminDB sync
-        v
-Debian server: ~/HealthData/DBs/*.db
-        |
-        | src/integrations/garmindb.py
-        v
-HealthData model
-        |
-        +--> recovery_rules.py
-        +--> decision_engine.py
-        +--> weekly_planner.py
-        |
-        +--> CLI preview
-        +--> Telegram bot
-```
-
-Core modules:
-
-- `src/integrations/garmindb.py`: GarminDB SQLite ingestion
-- `src/health_data.py`: normalized health model
-- `src/recovery_rules.py`: recovery score and level
-- `src/decision_engine.py`: daily recommendation decision
-- `src/weekly_planner.py`: weekly adaptation logic
-- `src/telegram_bot.py`: Telegram command interface
-- `scripts/test_garmindb_today.py`: GarminDB debug inspection
-- `scripts/preview_garmindb_recommendation.py`: product-style CLI preview
-
-## 🖥️ Server And Client Roles
-
-**Debian server**
-
-- runs Stramin and Telegram bot
-- owns `.venv`
-- stores local GarminDB data under `~/HealthData`
-- runs long GarminDB sync/import jobs in `tmux`
-- sends Telegram recommendations after validation
-
-**MacBook / client**
-
-- development and git workflow
-- optional GarminDB sync source if desired
-- never commits private health DBs, logs, `.env`, or credentials
-
-**Telegram bot**
-
-- `/today`: prefers GarminDB recommendation flow
-- `/weekly`: existing weekly planner
-- `/entry`: manual Garmin morning input fallback
-- `/cancel`: cancel manual entry flow
-
-## 🧬 GarminDB Integration
-
-Stramin reads local SQLite databases generated by GarminDB. It does not store
-Garmin credentials and does not automatically run sync in v4.
-
-Important paths:
-
-- GarminDB config: `~/.GarminDb/GarminConnectConfig.json`
-- health data root: `~/HealthData`
-- main DB: `~/HealthData/DBs/garmin.db`
-- monitoring DB: `~/HealthData/DBs/garmin_monitoring.db`
-- virtualenv install: `~/stramin/.venv`
-
-Metric sources:
-
-- sleep: `garmin.db.sleep.total_sleep`
-- stress: latest valid `garmin.db.stress.stress` where `stress >= 0`
-- resting HR: primary `garmin.db.resting_hr.resting_heart_rate`
-- HRV: primary `garmin.db.hrv.last_night_avg`; fallback
-  `garmin_monitoring.db.monitoring_hrv_status.last_night`
-- HRV 5-minute high: `last_night_5min_high` or monitoring fallback
-  `last_night_average`
-- Body Battery: currently unavailable in the known GarminDB schema and treated
-  as missing
-
-Debug:
+Useful local checks:
 
 ```bash
 python3 scripts/test_garmindb_today.py --db-dir ~/HealthData/DBs --debug
+python3 scripts/preview_garmindb_recommendation.py --db-dir ~/HealthData/DBs
+python3 automation/run_daily_pipeline.py --db-dir ~/HealthData/DBs --dry-run
 ```
 
-See [docs/garmindb-operations.md](docs/garmindb-operations.md) for operational
-commands and known GarminDB issues.
+Run the real Telegram publish path only after dry-run output looks correct:
 
-## ⚙️ Environment Variables
+```bash
+python3 automation/run_daily_pipeline.py --db-dir ~/HealthData/DBs
+```
+
+## Environment
+
+Common `.env` values:
 
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token_here
+TELEGRAM_CHAT_ID=your_chat_id_here
+GARMINDB_PATH=/home/rc/HealthData/DBs/garmin.db
+GARMINDB_DIR=/home/rc/HealthData/DBs
 STRAVA_ACCESS_TOKEN=your_token_here
 OPENAI_API_KEY=your_key_here
-GARMINDB_PATH=/home/rc/HealthData/DBs/garmin.db
 ```
 
-Notes:
+Automation timing:
 
-- `.env` is ignored and must never be committed.
-- `GARMINDB_PATH` is a local SQLite path, not a Garmin credential.
-- Garmin credentials belong only in
-  `~/.GarminDb/GarminConnectConfig.json`.
-- `OPENAI_API_KEY` is optional; v4 does not depend on AI coaching.
+```env
+STRAMIN_DAILY_REPORT_TIME=09:00
+STRAMIN_RETRY_INTERVAL_MINUTES=5
+STRAMIN_RETRY_CUTOFF_TIME=11:00
+```
 
-## 🧪 Testing
+`.env` is ignored and must never be committed.
 
-Run everything:
+## Repository Structure
+
+```text
+automation/                  v4 pipeline, validation, state generation
+docs/                        operational design and GarminDB runbooks
+reports/                     Telegram report formatting
+scripts/                     GarminDB inspection and preview tools
+src/integrations/            GarminDB, Telegram, CSV, and future adapters
+src/recovery_rules.py        recovery score and level
+src/decision_engine.py       daily training decision
+src/weekly_planner.py        weekly planning and adaptation
+src/telegram_bot.py          Telegram command interface
+tests/                       unit and integration tests
+```
+
+Module references:
+
+- `automation/validate_health_data.py`: production freshness gate
+- `automation/build_daily_state.py`: atomic daily state generation
+- `automation/run_daily_pipeline.py`: retry-aware publish pipeline
+- `src/integrations/garmindb.py`: GarminDB ingestion and metric metadata
+- `src/integrations/telegram_sender.py`: safe Telegram send abstraction
+- `reports/telegram_report.py`: user-facing Telegram message format
+
+## Testing
+
+Run all tests:
 
 ```bash
 python3 -m pytest
 ```
 
-Useful smoke checks:
+Tests must not require real Garmin credentials, real health databases, or real
+Telegram network calls. GarminDB tests use temporary SQLite databases.
 
-```bash
-python3 scripts/test_garmindb_today.py --db-dir ~/HealthData/DBs --debug
-python3 scripts/preview_garmindb_recommendation.py --db-dir ~/HealthData/DBs
-```
+## Deployment Notes
 
-## 🚢 Deployment Checklist
-
-- clone repo on Debian server
-- create `~/stramin/.venv`
-- install requirements
-- create `.env` from `.env.example`
-- configure GarminDB credentials at `~/.GarminDb/GarminConnectConfig.json`
-- verify `~/HealthData/DBs/garmin.db` exists
-- validate GarminDB tables with `sqlite3`
-- run `python3 -m pytest`
-- run GarminDB preview script
-- start Telegram bot in `tmux`
-- monitor logs under `logs/`
-
-## 🧵 Why tmux Matters
-
-GarminDB download/import/analyze jobs can run for a long time and may survive
-SSH disconnects. Use `tmux` for sync tasks and bot processes so production work
-does not die when your terminal closes.
-
-Example:
+Use `tmux` for long-running sync and bot processes:
 
 ```bash
 tmux new -s stramin-sync
-source ~/stramin/.venv/bin/activate
+cd ~/stramin
+source .venv/bin/activate
 garmindb_cli.py --all --download --import --analyze --latest
 ```
 
-Detach with `Ctrl-b d`, reattach with:
+Detach with `Ctrl-b d`; reattach with:
 
 ```bash
 tmux attach -t stramin-sync
 ```
 
-## 🌿 Git Workflow
+Do not hide GarminDB sync failures behind silent automation. v4 favors visible
+operator control until sync behavior is stable enough for cron/systemd.
 
-- work on feature branches, for example `feature/garmindb-today-flow`
-- keep PRs focused
-- run `python3 -m pytest` before pushing
-- never commit private DBs, logs, `.env`, tokens, or Garmin credentials
-- preserve tests unless replacing them with stronger coverage
-
-## 🧯 Troubleshooting
-
-GarminDB sync/download issues:
-
-- known error:
-  `TypeError: argument of type 'NoneType' is not iterable`
-- prefer:
-  `garmindb_cli.py --all --download --import --analyze --latest`
-- run inside `tmux`
-- validate DB tables before sending Telegram recommendations
-
-No recommendation:
-
-- confirm `~/HealthData/DBs/garmin.db` exists
-- run the debug script
-- check stress rows; negative stress values are ignored
-- use `/entry` as manual fallback
-
-Telegram bot not responding:
-
-- confirm `TELEGRAM_BOT_TOKEN`
-- run inside `tmux`
-- check network access and logs
-
-## 🔐 Privacy And Security
+## Privacy And Security
 
 Never commit:
 
 - `.env`
 - `.venv/`
 - `HealthData/`
-- `*.db`, `*.sqlite`
-- `*.log`, `logs/`
+- `logs/`
+- `*.db`
+- `*.sqlite`
+- `*.log`
 - Garmin credentials
 - real `data/garmin_health.csv`
 
-Health data is sensitive. Treat local SQLite files and logs as private runtime
+Health data, Telegram IDs, GarminDB files, and logs are private runtime
 artifacts.
 
-## 🗺️ Roadmap
+## Historical And Deprecated Workflows
+
+These workflows remain useful for development, fallback, and tests, but they
+are no longer the primary v4 production path.
+
+CSV/manual Garmin flow:
+
+```bash
+python3 src/add_garmin_entry.py
+python3 src/morning_check.py
+python3 src/main.py
+```
+
+Sample CSV data lives at:
+
+```text
+data/garmin_health_sample.csv
+```
+
+Real CSV health data should remain local and ignored:
+
+```text
+data/garmin_health.csv
+```
+
+## Roadmap
 
 v4:
 
-- stable GarminDB ingestion
+- production-safe GarminDB ingestion
 - validation-gated Telegram delivery
-- nightly sync automation design
+- retry and duplicate prevention
+- operational logging
 - stale-data protection
-- production logging
+- deployment hygiene
 
 v5:
 
-- AI coaching layer
-- richer narrative explanations
-- training-history-aware suggestions
+- AI orchestration layer
+- richer coaching narratives
+- training-history-aware adaptation
 - safer personalization controls
+- multi-source health intelligence
