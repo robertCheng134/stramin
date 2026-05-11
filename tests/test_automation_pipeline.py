@@ -618,3 +618,75 @@ def test_run_daily_pipeline_loads_dotenv_before_telegram_send(tmp_path, monkeypa
     assert result["telegram_sent"] is True
     assert call_order[0] == ("dotenv", ".env")
     assert call_order[1][0] == "send"
+
+
+def test_main_prints_actual_telegram_sent_result(monkeypatch, capsys):
+    args = type(
+        "Args",
+        (),
+        {
+            "db_dir": "db",
+            "output": "daily_state.json",
+            "log_dir": "logs",
+            "notification_state": "notification_state.json",
+            "allow_stale": False,
+            "dry_run": False,
+            "daily_report_time": "09:00",
+            "retry_interval_minutes": 5,
+            "cutoff_time": "11:00",
+        },
+    )()
+    monkeypatch.setattr(run_daily_pipeline_module, "parse_args", lambda: args)
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "run_daily_pipeline",
+        lambda **kwargs: {
+            "status": "ready",
+            "telegram_sent": True,
+            "state": {"latest_recovery_date": "2026-05-10"},
+        },
+    )
+
+    exit_code = run_daily_pipeline_module.main()
+
+    assert exit_code == 0
+    assert (
+        "Daily pipeline ready: latest_recovery_date=2026-05-10; telegram_sent=true"
+        in capsys.readouterr().out
+    )
+
+
+def test_main_prints_false_for_dry_run_result(monkeypatch, capsys):
+    args = type(
+        "Args",
+        (),
+        {
+            "db_dir": "db",
+            "output": "daily_state.json",
+            "log_dir": "logs",
+            "notification_state": "notification_state.json",
+            "allow_stale": False,
+            "dry_run": True,
+            "daily_report_time": "09:00",
+            "retry_interval_minutes": 5,
+            "cutoff_time": "11:00",
+        },
+    )()
+    monkeypatch.setattr(run_daily_pipeline_module, "parse_args", lambda: args)
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "run_daily_pipeline",
+        lambda **kwargs: {
+            "status": "ready",
+            "telegram_sent": False,
+            "state": {"latest_recovery_date": "2026-05-10"},
+        },
+    )
+
+    exit_code = run_daily_pipeline_module.main()
+
+    assert exit_code == 0
+    assert (
+        "Daily pipeline ready: latest_recovery_date=2026-05-10; telegram_sent=false"
+        in capsys.readouterr().out
+    )

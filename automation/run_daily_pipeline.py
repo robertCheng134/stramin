@@ -269,7 +269,7 @@ def main():
     print(
         "Daily pipeline ready: "
         f"latest_recovery_date={result['state']['latest_recovery_date']}; "
-        "telegram_sent=false"
+        f"telegram_sent={str(result.get('telegram_sent', False)).lower()}"
     )
     return 0
 
