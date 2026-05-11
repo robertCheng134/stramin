@@ -530,7 +530,7 @@ def test_run_daily_pipeline_noops_when_report_already_sent_today(
     monkeypatch.setattr(
         run_daily_pipeline_module,
         "run_garmindb_sync",
-        lambda: pytest.fail("duplicate no-op must not sync GarminDB"),
+        lambda: pytest.fail("default duplicate no-op must not sync GarminDB"),
     )
 
     result = run_daily_pipeline_module.run_daily_pipeline(
@@ -539,11 +539,62 @@ def test_run_daily_pipeline_noops_when_report_already_sent_today(
         log_dir=tmp_path / "logs",
         notification_state_path=notification_state,
         current_datetime=datetime.fromisoformat("2026-05-10T09:30:00+08:00"),
-        sync_garmin=True,
     )
 
     assert result["status"] == "already_sent"
     assert result["telegram_sent"] is False
+    assert "already sent" in result["telegram_reason"]
+
+
+def test_run_daily_pipeline_sync_garmin_runs_before_already_sent_noop(
+    tmp_path,
+    monkeypatch,
+):
+    notification_state = tmp_path / "notification_state.json"
+    notification_state.write_text(
+        json.dumps(
+            {
+                "date": "2026-05-10",
+                "telegram_sent": True,
+                "sent_at": "2026-05-10T09:01:00+08:00",
+                "last_attempt_at": "2026-05-10T09:01:00+08:00",
+                "retry_count": 0,
+                "final_failure_sent": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    call_order = []
+
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "run_garmindb_sync",
+        lambda: call_order.append("sync") or 0,
+    )
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "validate_garmindb",
+        lambda **kwargs: pytest.fail("already-sent no-op must not validate"),
+    )
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "send_message",
+        lambda text: pytest.fail("already-sent no-op must not send Telegram"),
+    )
+
+    result = run_daily_pipeline_module.run_daily_pipeline(
+        db_dir=tmp_path,
+        output=tmp_path / "daily_state.json",
+        log_dir=tmp_path / "logs",
+        notification_state_path=notification_state,
+        sync_garmin=True,
+        current_datetime=datetime.fromisoformat("2026-05-10T09:30:00+08:00"),
+    )
+
+    assert call_order == ["sync"]
+    assert result["status"] == "already_sent"
+    assert result["telegram_sent"] is False
+    assert result["sync"]["status"] == "completed"
     assert "already sent" in result["telegram_reason"]
 
 

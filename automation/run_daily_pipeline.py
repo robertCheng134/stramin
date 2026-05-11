@@ -91,8 +91,13 @@ def _recommendation_preview_from_state(state):
     }
 
 
-def _already_sent_result(dry_run, daily_report_time, notification_state):
-    return {
+def _already_sent_result(
+    dry_run,
+    daily_report_time,
+    notification_state,
+    sync_result=None,
+):
+    result = {
         "status": "already_sent",
         "dry_run": dry_run,
         "daily_report_time": daily_report_time,
@@ -100,6 +105,9 @@ def _already_sent_result(dry_run, daily_report_time, notification_state):
         "telegram_reason": "Daily report already sent for today.",
         "notification_state": notification_state,
     }
+    if sync_result is not None:
+        result["sync"] = sync_result
+    return result
 
 
 def _sync_failed_result(dry_run, daily_report_time, sync_result, notification_state):
@@ -295,18 +303,35 @@ def run_daily_pipeline(
         current_date,
     )
 
+    sync_result = None
+    if sync_garmin:
+        sync_result = _run_sync_step(sync_garmin, log_dir, logger)
+        if sync_result.get("status") == "failed":
+            return _sync_failed_result(
+                dry_run,
+                daily_report_time,
+                sync_result,
+                notification_state,
+            )
+
     if notification_state.get("telegram_sent"):
         logger.info("Daily report already sent for %s; no-op", current_date)
-        return _already_sent_result(dry_run, daily_report_time, notification_state)
-
-    sync_result = _run_sync_step(sync_garmin, log_dir, logger)
-    if sync_result.get("status") == "failed":
-        return _sync_failed_result(
+        return _already_sent_result(
             dry_run,
             daily_report_time,
-            sync_result,
             notification_state,
+            sync_result=sync_result,
         )
+
+    if sync_result is None:
+        sync_result = _run_sync_step(sync_garmin, log_dir, logger)
+        if sync_result.get("status") == "failed":
+            return _sync_failed_result(
+                dry_run,
+                daily_report_time,
+                sync_result,
+                notification_state,
+            )
 
     notification_state["last_attempt_at"] = now_iso()
 

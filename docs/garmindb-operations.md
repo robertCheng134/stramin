@@ -15,13 +15,13 @@ password, token, or credential.
 
 ## Preferred Sync Command
 
-Run GarminDB sync jobs inside `tmux`:
+Use the Stramin-managed GarminDB sync wrapper:
 
 ```bash
 tmux new -s stramin-sync
 cd ~/stramin
 source .venv/bin/activate
-garmindb_cli.py --all --download --import --analyze --latest
+python3 automation/run_garmindb_sync.py
 ```
 
 Detach with `Ctrl-b d`.
@@ -31,6 +31,26 @@ Reattach:
 ```bash
 tmux attach -t stramin-sync
 ```
+
+The wrapper runs:
+
+```bash
+garmindb_cli.py --all --download --import --analyze --latest
+```
+
+Raw `garmindb_cli.py` is an implementation detail and troubleshooting tool,
+not the preferred operator interface. Never run a full GarminDB sync without
+`--latest` during normal production operation.
+
+Production daily reports should run the full Stramin pipeline with managed
+sync enabled:
+
+```bash
+python3 automation/run_daily_pipeline.py --sync-garmin --db-dir ~/HealthData/DBs
+```
+
+A future systemd timer should call that pipeline command rather than raw
+GarminDB CLI.
 
 ## Known GarminDB Issue
 
@@ -46,7 +66,7 @@ Known error:
 TypeError: argument of type 'NoneType' is not iterable
 ```
 
-Prefer the full pipeline:
+For troubleshooting, the raw equivalent of Stramin's managed sync is:
 
 ```bash
 garmindb_cli.py --all --download --import --analyze --latest

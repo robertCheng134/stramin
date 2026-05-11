@@ -138,8 +138,12 @@ Paths:
 Preferred sync command:
 
 ```bash
-garmindb_cli.py --all --download --import --analyze --latest
+python3 automation/run_garmindb_sync.py
 ```
+
+The Stramin wrapper owns the normal sync command and keeps `--latest` in place.
+Raw `garmindb_cli.py` is an implementation detail and troubleshooting tool
+only. Never run a full GarminDB sync without `--latest`.
 
 Known instability:
 
@@ -177,7 +181,7 @@ automatic recommendations.
 ```bash
 tmux new -s stramin-sync
 source ~/stramin/.venv/bin/activate
-garmindb_cli.py --all --download --import --analyze --latest
+python3 automation/run_daily_pipeline.py --sync-garmin --db-dir ~/HealthData/DBs
 ```
 
 Detach:

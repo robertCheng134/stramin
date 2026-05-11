@@ -169,10 +169,19 @@ python3 scripts/preview_garmindb_recommendation.py --db-dir ~/HealthData/DBs
 python3 automation/run_daily_pipeline.py --db-dir ~/HealthData/DBs --dry-run
 ```
 
+Run a Stramin-managed GarminDB latest sync:
+
+```bash
+python3 automation/run_garmindb_sync.py
+```
+
+This wrapper intentionally runs GarminDB with `--latest`. Do not run a full
+GarminDB history sync without `--latest` during normal production operation.
+
 Run the real Telegram publish path only after dry-run output looks correct:
 
 ```bash
-python3 automation/run_daily_pipeline.py --db-dir ~/HealthData/DBs
+python3 automation/run_daily_pipeline.py --sync-garmin --db-dir ~/HealthData/DBs
 ```
 
 ## Environment
@@ -235,13 +244,13 @@ Telegram network calls. GarminDB tests use temporary SQLite databases.
 
 ## Deployment Notes
 
-Use `tmux` for long-running sync and bot processes:
+Use Stramin's managed sync wrapper instead of calling GarminDB directly:
 
 ```bash
 tmux new -s stramin-sync
 cd ~/stramin
 source .venv/bin/activate
-garmindb_cli.py --all --download --import --analyze --latest
+python3 automation/run_garmindb_sync.py
 ```
 
 Detach with `Ctrl-b d`; reattach with:
@@ -250,8 +259,26 @@ Detach with `Ctrl-b d`; reattach with:
 tmux attach -t stramin-sync
 ```
 
+For production daily reports, run the pipeline with managed sync enabled:
+
+```bash
+python3 automation/run_daily_pipeline.py --sync-garmin --db-dir ~/HealthData/DBs
+```
+
+Raw `garmindb_cli.py` usage is an implementation detail and troubleshooting
+escape hatch. It should not be the normal operator interface. If you do need to
+inspect or reproduce the underlying command, never run a full GarminDB sync
+without `--latest`.
+
+A future systemd timer should call:
+
+```bash
+python3 automation/run_daily_pipeline.py --sync-garmin --db-dir ~/HealthData/DBs
+```
+
 Do not hide GarminDB sync failures behind silent automation. v4 favors visible
-operator control until sync behavior is stable enough for cron/systemd.
+operator control until sync behavior is stable enough for unattended systemd
+timers.
 
 ## Privacy And Security
 

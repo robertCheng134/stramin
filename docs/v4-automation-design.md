@@ -18,7 +18,7 @@ No AI coaching belongs in this design. v5 will handle AI.
 tmux/systemd/cron trigger
         |
         v
-GarminDB sync
+Stramin-managed GarminDB sync
         |
         v
 SQLite validation
@@ -163,6 +163,21 @@ On GarminDB failure:
 - do not auto-run hidden recovery commands
 - require operator inspection for repeated failures
 
+Operators should use Stramin's wrapper instead of raw GarminDB CLI:
+
+```bash
+python3 automation/run_garmindb_sync.py
+```
+
+The production daily pipeline should use managed sync:
+
+```bash
+python3 automation/run_daily_pipeline.py --sync-garmin --db-dir ~/HealthData/DBs
+```
+
+Raw `garmindb_cli.py` is an implementation detail for troubleshooting only.
+Never run a full GarminDB sync without `--latest`.
+
 ## Logging Strategy
 
 Recommended log locations:
@@ -191,8 +206,7 @@ Use `tmux` until cron/systemd automation is intentionally introduced:
 tmux new -s stramin-sync
 cd ~/stramin
 source .venv/bin/activate
-garmindb_cli.py --all --download --import --analyze --latest
-python3 scripts/preview_garmindb_recommendation.py --db-dir ~/HealthData/DBs
+python3 automation/run_daily_pipeline.py --sync-garmin --db-dir ~/HealthData/DBs
 ```
 
 Detach with `Ctrl-b d`.
@@ -209,3 +223,9 @@ Future automation can move from `tmux` to `cron` or `systemd` when:
 - failure notifications are clear
 
 Until then, prefer manual `tmux` operation for production safety.
+
+A future systemd timer should eventually call:
+
+```bash
+python3 automation/run_daily_pipeline.py --sync-garmin --db-dir ~/HealthData/DBs
+```
