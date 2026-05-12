@@ -289,26 +289,34 @@ Detach with `Ctrl-b d`; reattach with:
 tmux attach -t stramin-sync
 ```
 
-For production daily reports, run the pipeline with managed sync enabled:
+For production daily reports, run the morning scheduler. It only calls the
+pipeline during the delivery window and avoids an all-day five-minute sync loop:
 
 ```bash
-python3 automation/run_daily_pipeline.py --sync-garmin --db-dir ~/HealthData/DBs
+python3 automation/run_morning_scheduler.py --db-dir ~/HealthData/DBs
 ```
+
+The scheduler calls `run_daily_pipeline.py --sync-garmin` between `09:00` and
+`11:00`, retries every five minutes only while the window is open, and stops for
+the day after the report is sent or already marked sent. It does not keep
+syncing GarminDB after cutoff.
 
 Raw `garmindb_cli.py` usage is an implementation detail and troubleshooting
 escape hatch. It should not be the normal operator interface. If you do need to
 inspect or reproduce the underlying command, never run a full GarminDB sync
 without `--latest`.
 
-A future systemd timer should call:
+A future systemd service/timer should call the scheduler or an equivalent
+controlled daily trigger:
 
 ```bash
-python3 automation/run_daily_pipeline.py --sync-garmin --db-dir ~/HealthData/DBs
+python3 automation/run_morning_scheduler.py --db-dir ~/HealthData/DBs
 ```
 
 Do not hide GarminDB sync failures behind silent automation. v4 favors visible
 operator control until sync behavior is stable enough for unattended systemd
-timers.
+timers. Do not use a raw infinite loop such as running the daily pipeline every
+five minutes all day.
 
 ## Privacy And Security
 

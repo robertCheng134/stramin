@@ -206,8 +206,22 @@ Use `tmux` until cron/systemd automation is intentionally introduced:
 tmux new -s stramin-sync
 cd ~/stramin
 source .venv/bin/activate
-python3 automation/run_daily_pipeline.py --sync-garmin --db-dir ~/HealthData/DBs
+python3 automation/run_morning_scheduler.py --db-dir ~/HealthData/DBs
 ```
+
+The scheduler replaces raw infinite loops such as:
+
+```bash
+while true; do
+  python3 automation/run_daily_pipeline.py --sync-garmin --db-dir ~/HealthData/DBs
+  sleep 300
+done
+```
+
+It waits until the morning delivery window, retries only between `09:00` and
+`11:00`, stops after the report is sent or already marked sent, and does not
+sync GarminDB continuously all day. After cutoff, any final pipeline handling
+runs without `--sync-garmin`.
 
 Detach with `Ctrl-b d`.
 
@@ -224,8 +238,9 @@ Future automation can move from `tmux` to `cron` or `systemd` when:
 
 Until then, prefer manual `tmux` operation for production safety.
 
-A future systemd timer should eventually call:
+A future systemd service/timer should eventually call the scheduler or an
+equivalent controlled daily trigger:
 
 ```bash
-python3 automation/run_daily_pipeline.py --sync-garmin --db-dir ~/HealthData/DBs
+python3 automation/run_morning_scheduler.py --db-dir ~/HealthData/DBs
 ```
