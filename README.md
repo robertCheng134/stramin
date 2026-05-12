@@ -139,6 +139,10 @@ Always order by business date columns:
 See [GarminDB operations](docs/garmindb-operations.md) for sync commands,
 validation queries, and known GarminDB issues.
 
+Experimental provider research lives in
+[Garmin provider evaluation](docs/garmin-provider-evaluation.md). It is not part
+of the production runtime; GarminDB remains the production backend.
+
 ## AI Philosophy
 
 AI is optional augmentation, not the control plane.
