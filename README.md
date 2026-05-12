@@ -153,6 +153,18 @@ enough to trust.
 
 ## Developer Setup
 
+First-run bootstrap:
+
+```bash
+python3 automation/bootstrap.py
+```
+
+The bootstrap helper creates `.venv` if needed, installs `requirements.txt`,
+runs `.env` setup without overwriting an existing `.env`, and verifies
+`garmindb_cli.py` from the virtualenv.
+
+Manual setup:
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate

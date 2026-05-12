@@ -1,5 +1,6 @@
 import shutil
 import stat
+import argparse
 from pathlib import Path
 
 
@@ -95,11 +96,22 @@ def setup_env(project_dir=None, backup_path=None, output=print):
     }
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Create or validate Stramin .env.")
+    parser.add_argument(
+        "--allow-missing",
+        action="store_true",
+        help="Return success even when required values still need to be filled in.",
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
     result = setup_env()
     if result["status"] == "failed":
         return 1
-    if result["status"] == "missing_required_values":
+    if result["status"] == "missing_required_values" and not args.allow_missing:
         return 2
     return 0
 
