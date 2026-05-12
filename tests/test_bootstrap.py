@@ -55,8 +55,20 @@ def test_bootstrap_creates_venv_installs_requirements_and_verifies_cli(
     assert calls[3]["env"]["VIRTUAL_ENV"] == str(venv_dir)
     assert str(venv_dir / "bin") in calls[3]["env"]["PATH"]
     assert "First bootstrap sync:" in messages
-    assert "  python3 automation/run_garmindb_sync.py --timeout 0" in messages
-    assert "Daily operation:" in messages
+    assert (
+        "  .venv/bin/python automation/run_garmindb_sync.py --timeout 0" in messages
+    )
+    assert "Morning scheduler:" in messages
+    assert (
+        "  .venv/bin/python automation/run_morning_scheduler.py "
+        "--db-dir ~/HealthData/DBs"
+        in messages
+    )
+    assert "garmindb_cli.py" not in "\n".join(messages)
+    assert "python3 automation/run_garmindb_sync.py --timeout 0" not in "\n".join(
+        messages
+    )
+    assert "python3 automation/run_morning_scheduler.py" not in "\n".join(messages)
 
 
 def test_bootstrap_reuses_existing_venv_without_recreating_or_installing(
@@ -85,3 +97,30 @@ def test_bootstrap_reuses_existing_venv_without_recreating_or_installing(
     ]
     assert calls[1]["command"] == ["which", "garmindb_cli.py"]
     assert "Reusing existing .venv; it will not be recreated." in messages
+
+
+def test_bootstrap_interactive_passes_interactive_to_setup_env(tmp_path, monkeypatch):
+    calls = []
+    messages = []
+    (tmp_path / ".venv").mkdir()
+    (tmp_path / "automation").mkdir()
+    (tmp_path / "automation" / "setup_env.py").write_text("", encoding="utf-8")
+
+    def fake_run(command, check, env=None):
+        calls.append({"command": command, "check": check, "env": env})
+
+    monkeypatch.setattr(bootstrap_module.subprocess, "run", fake_run)
+
+    result = bootstrap_module.bootstrap(
+        project_dir=tmp_path,
+        output=messages.append,
+        interactive=True,
+    )
+
+    assert result == 0
+    assert calls[0]["command"] == [
+        str(tmp_path / ".venv" / "bin" / "python"),
+        str(tmp_path / "automation" / "setup_env.py"),
+        "--allow-missing",
+        "--interactive",
+    ]

@@ -1,20 +1,35 @@
 import argparse
+import shutil
 import subprocess
+from pathlib import Path
 
 
-SYNC_COMMAND = [
-    "garmindb_cli.py",
-    "--all",
-    "--download",
-    "--import",
-    "--analyze",
-    "--latest",
-]
+CLI_NAME = "garmindb_cli.py"
+SYNC_FLAGS = ["--all", "--download", "--import", "--analyze", "--latest"]
 DEFAULT_TIMEOUT_SECONDS = 1800
 
 
+def project_root():
+    return Path(__file__).resolve().parent.parent
+
+
+def venv_cli_path(root=None):
+    root_path = Path(root) if root else project_root()
+    return root_path / ".venv" / "bin" / CLI_NAME
+
+
+def resolve_garmindb_cli(root=None):
+    local_cli = venv_cli_path(root)
+    if local_cli.exists():
+        return str(local_cli)
+    return shutil.which(CLI_NAME)
+
+
 def build_sync_command():
-    return list(SYNC_COMMAND)
+    cli = resolve_garmindb_cli()
+    if cli is None:
+        cli = CLI_NAME
+    return [cli] + list(SYNC_FLAGS)
 
 
 def run_garmindb_sync(timeout=DEFAULT_TIMEOUT_SECONDS):
@@ -23,6 +38,8 @@ def run_garmindb_sync(timeout=DEFAULT_TIMEOUT_SECONDS):
     print("Command: " + " ".join(command))
 
     try:
+        if command[0] == CLI_NAME and resolve_garmindb_cli() is None:
+            raise FileNotFoundError(CLI_NAME)
         if timeout <= 0:
             subprocess.run(command, check=True)
         else:

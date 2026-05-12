@@ -107,7 +107,12 @@ def _create_valid_garmindb(db_dir, day="2026-05-10"):
     return db_path
 
 
-def test_garmindb_sync_command_is_latest_only():
+def test_garmindb_sync_command_is_latest_only(monkeypatch):
+    monkeypatch.setattr(
+        run_garmindb_sync_module,
+        "resolve_garmindb_cli",
+        lambda: "garmindb_cli.py",
+    )
     command = run_garmindb_sync_module.build_sync_command()
 
     assert command == [
@@ -121,7 +126,12 @@ def test_garmindb_sync_command_is_latest_only():
     assert "--latest" in command
 
 
-def test_garmindb_sync_command_includes_required_steps():
+def test_garmindb_sync_command_includes_required_steps(monkeypatch):
+    monkeypatch.setattr(
+        run_garmindb_sync_module,
+        "resolve_garmindb_cli",
+        lambda: "garmindb_cli.py",
+    )
     command = run_garmindb_sync_module.build_sync_command()
 
     for flag in ["--all", "--download", "--import", "--analyze"]:
@@ -130,10 +140,16 @@ def test_garmindb_sync_command_includes_required_steps():
 
 def test_run_garmindb_sync_success_returns_zero(monkeypatch, capsys):
     calls = []
+    resolved_cli = "/repo/.venv/bin/garmindb_cli.py"
 
     def fake_run(command, timeout, check):
         calls.append({"command": command, "timeout": timeout, "check": check})
 
+    monkeypatch.setattr(
+        run_garmindb_sync_module,
+        "resolve_garmindb_cli",
+        lambda: resolved_cli,
+    )
     monkeypatch.setattr(run_garmindb_sync_module.subprocess, "run", fake_run)
 
     exit_code = run_garmindb_sync_module.run_garmindb_sync(timeout=42)
@@ -141,7 +157,8 @@ def test_run_garmindb_sync_success_returns_zero(monkeypatch, capsys):
     assert exit_code == 0
     assert calls == [
         {
-            "command": run_garmindb_sync_module.build_sync_command(),
+            "command": [resolved_cli]
+            + ["--all", "--download", "--import", "--analyze", "--latest"],
             "timeout": 42,
             "check": True,
         }
@@ -149,12 +166,48 @@ def test_run_garmindb_sync_success_returns_zero(monkeypatch, capsys):
     assert "completed successfully" in capsys.readouterr().out
 
 
+def test_garmindb_sync_prefers_venv_local_cli(tmp_path, monkeypatch):
+    local_cli = tmp_path / ".venv" / "bin" / "garmindb_cli.py"
+    local_cli.parent.mkdir(parents=True)
+    local_cli.write_text("#!/usr/bin/env python\n", encoding="utf-8")
+    monkeypatch.setattr(
+        run_garmindb_sync_module.shutil,
+        "which",
+        lambda name: "/usr/local/bin/garmindb_cli.py",
+    )
+
+    resolved = run_garmindb_sync_module.resolve_garmindb_cli(root=tmp_path)
+
+    assert resolved == str(local_cli)
+
+
+def test_garmindb_sync_falls_back_to_path_when_venv_cli_missing(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        run_garmindb_sync_module.shutil,
+        "which",
+        lambda name: "/usr/local/bin/garmindb_cli.py",
+    )
+
+    resolved = run_garmindb_sync_module.resolve_garmindb_cli(root=tmp_path)
+
+    assert resolved == "/usr/local/bin/garmindb_cli.py"
+
+
 def test_run_garmindb_sync_timeout_zero_disables_timeout(monkeypatch):
     calls = []
+    resolved_cli = "/repo/.venv/bin/garmindb_cli.py"
 
     def fake_run(*args, **kwargs):
         calls.append({"args": args, "kwargs": kwargs})
 
+    monkeypatch.setattr(
+        run_garmindb_sync_module,
+        "resolve_garmindb_cli",
+        lambda: resolved_cli,
+    )
     monkeypatch.setattr(run_garmindb_sync_module.subprocess, "run", fake_run)
 
     exit_code = run_garmindb_sync_module.run_garmindb_sync(timeout=0)
@@ -162,7 +215,10 @@ def test_run_garmindb_sync_timeout_zero_disables_timeout(monkeypatch):
     assert exit_code == 0
     assert calls == [
         {
-            "args": (run_garmindb_sync_module.build_sync_command(),),
+            "args": (
+                [resolved_cli]
+                + ["--all", "--download", "--import", "--analyze", "--latest"],
+            ),
             "kwargs": {"check": True},
         }
     ]
@@ -170,10 +226,16 @@ def test_run_garmindb_sync_timeout_zero_disables_timeout(monkeypatch):
 
 def test_run_garmindb_sync_positive_timeout_passes_timeout(monkeypatch):
     calls = []
+    resolved_cli = "/repo/.venv/bin/garmindb_cli.py"
 
     def fake_run(*args, **kwargs):
         calls.append({"args": args, "kwargs": kwargs})
 
+    monkeypatch.setattr(
+        run_garmindb_sync_module,
+        "resolve_garmindb_cli",
+        lambda: resolved_cli,
+    )
     monkeypatch.setattr(run_garmindb_sync_module.subprocess, "run", fake_run)
 
     exit_code = run_garmindb_sync_module.run_garmindb_sync(timeout=42)
@@ -181,7 +243,10 @@ def test_run_garmindb_sync_positive_timeout_passes_timeout(monkeypatch):
     assert exit_code == 0
     assert calls == [
         {
-            "args": (run_garmindb_sync_module.build_sync_command(),),
+            "args": (
+                [resolved_cli]
+                + ["--all", "--download", "--import", "--analyze", "--latest"],
+            ),
             "kwargs": {"timeout": 42, "check": True},
         }
     ]
@@ -195,6 +260,11 @@ def test_run_garmindb_sync_failure_returns_nonzero(monkeypatch, capsys):
         )
 
     monkeypatch.setattr(run_garmindb_sync_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        run_garmindb_sync_module,
+        "resolve_garmindb_cli",
+        lambda: "/repo/.venv/bin/garmindb_cli.py",
+    )
 
     exit_code = run_garmindb_sync_module.run_garmindb_sync(timeout=42)
 
@@ -203,10 +273,7 @@ def test_run_garmindb_sync_failure_returns_nonzero(monkeypatch, capsys):
 
 
 def test_run_garmindb_sync_missing_cli_returns_clear_error(monkeypatch, capsys):
-    def fake_run(command, timeout, check):
-        raise FileNotFoundError("garmindb_cli.py")
-
-    monkeypatch.setattr(run_garmindb_sync_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(run_garmindb_sync_module, "resolve_garmindb_cli", lambda: None)
 
     exit_code = run_garmindb_sync_module.run_garmindb_sync(timeout=42)
 

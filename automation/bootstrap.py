@@ -1,4 +1,5 @@
 import os
+import argparse
 import subprocess
 from pathlib import Path
 
@@ -23,7 +24,7 @@ def _venv_env(venv_dir):
     return env
 
 
-def bootstrap(project_dir=ROOT_DIR, output=print):
+def bootstrap(project_dir=ROOT_DIR, output=print, interactive=False):
     project_path = Path(project_dir)
     venv_dir = project_path / ".venv"
     requirements = project_path / "requirements.txt"
@@ -43,8 +44,15 @@ def bootstrap(project_dir=ROOT_DIR, output=print):
         )
 
     output("Creating or validating .env...")
+    setup_command = [
+        _venv_command(venv_dir, "python"),
+        str(setup_env_script),
+        "--allow-missing",
+    ]
+    if interactive:
+        setup_command.append("--interactive")
     subprocess.run(
-        [_venv_command(venv_dir, "python"), str(setup_env_script), "--allow-missing"],
+        setup_command,
         check=True,
     )
 
@@ -58,18 +66,29 @@ def bootstrap(project_dir=ROOT_DIR, output=print):
     output("")
     output("Next steps:")
     output("First bootstrap sync:")
-    output("  python3 automation/run_garmindb_sync.py --timeout 0")
+    output("  .venv/bin/python automation/run_garmindb_sync.py --timeout 0")
     output("")
-    output("Daily operation:")
+    output("Morning scheduler:")
     output(
-        "  python3 automation/run_daily_pipeline.py "
-        "--sync-garmin --db-dir ~/HealthData/DBs"
+        "  .venv/bin/python automation/run_morning_scheduler.py "
+        "--db-dir ~/HealthData/DBs"
     )
     return 0
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Bootstrap Stramin first-run setup.")
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Prompt for Telegram, Garmin, and optional integration secrets.",
+    )
+    return parser.parse_args()
+
+
 def main():
-    return bootstrap()
+    args = parse_args()
+    return bootstrap(interactive=args.interactive)
 
 
 if __name__ == "__main__":

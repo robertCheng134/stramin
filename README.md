@@ -153,29 +153,17 @@ enough to trust.
 
 ## Developer Setup
 
-First-run bootstrap:
+Normal first-run setup:
 
 ```bash
-python3 automation/bootstrap.py
+python3 automation/bootstrap.py --interactive
+.venv/bin/python automation/run_garmindb_sync.py --timeout 0
+.venv/bin/python automation/run_morning_scheduler.py --db-dir ~/HealthData/DBs
 ```
 
-The bootstrap helper creates `.venv` if needed, installs `requirements.txt`,
-runs `.env` setup without overwriting an existing `.env`, and verifies
-`garmindb_cli.py` from the virtualenv.
-
-Manual setup:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-which garmindb_cli.py
-cp .env.example .env
-python3 -m pytest
-```
-
-`garmindb` is installed from `requirements.txt` as Stramin's Garmin ingestion
-backend. `which garmindb_cli.py` should resolve inside the active virtualenv.
+See [First-run onboarding](docs/first-run-onboarding.md) for the full user
+flow. Stramin owns virtualenv creation, dependency installation, `.env` setup,
+and GarminDB path defaults.
 
 Useful local checks:
 
@@ -199,13 +187,13 @@ For first-run GarminDB bootstrap, local import/analyze can take much longer.
 Disable the wrapper timeout explicitly:
 
 ```bash
-python3 automation/run_garmindb_sync.py --timeout 0
+.venv/bin/python automation/run_garmindb_sync.py --timeout 0
 ```
 
 Run the real Telegram publish path only after dry-run output looks correct:
 
 ```bash
-python3 automation/run_daily_pipeline.py --sync-garmin --db-dir ~/HealthData/DBs
+.venv/bin/python automation/run_morning_scheduler.py --db-dir ~/HealthData/DBs
 ```
 
 ## Environment
@@ -215,11 +203,12 @@ Common `.env` values:
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token_here
 TELEGRAM_CHAT_ID=your_chat_id_here
-GARMINDB_PATH=/home/rc/HealthData/DBs/garmin.db
-GARMINDB_DIR=/home/rc/HealthData/DBs
 STRAVA_ACCESS_TOKEN=your_token_here
 OPENAI_API_KEY=your_key_here
 ```
+
+`automation/bootstrap.py --interactive` fills GarminDB path defaults
+automatically. Normal users should not manually set GarminDB paths.
 
 Automation timing:
 
@@ -280,7 +269,7 @@ python3 automation/run_garmindb_sync.py
 For first-run bootstrap inside `tmux`, use:
 
 ```bash
-python3 automation/run_garmindb_sync.py --timeout 0
+.venv/bin/python automation/run_garmindb_sync.py --timeout 0
 ```
 
 Detach with `Ctrl-b d`; reattach with:
@@ -293,7 +282,7 @@ For production daily reports, run the morning scheduler. It only calls the
 pipeline during the delivery window and avoids an all-day five-minute sync loop:
 
 ```bash
-python3 automation/run_morning_scheduler.py --db-dir ~/HealthData/DBs
+.venv/bin/python automation/run_morning_scheduler.py --db-dir ~/HealthData/DBs
 ```
 
 The scheduler calls `run_daily_pipeline.py --sync-garmin` between `09:00` and
@@ -310,7 +299,7 @@ A future systemd service/timer should call the scheduler or an equivalent
 controlled daily trigger:
 
 ```bash
-python3 automation/run_morning_scheduler.py --db-dir ~/HealthData/DBs
+.venv/bin/python automation/run_morning_scheduler.py --db-dir ~/HealthData/DBs
 ```
 
 Do not hide GarminDB sync failures behind silent automation. v4 favors visible
