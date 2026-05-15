@@ -81,8 +81,12 @@ def test_scheduler_within_window_runs_pipeline():
         "--sync-garmin",
         "--db-dir",
     ]
+    assert "--sync-garmin" in calls[0]["command"]
     assert calls[0]["command"][0] != "python3"
     assert "/tmp/DBs" in calls[0]["command"]
+    assert calls[0]["command"][calls[0]["command"].index("--db-dir") + 1] == (
+        "/tmp/DBs"
+    )
     assert calls[0]["kwargs"] == {
         "check": False,
         "capture_output": True,
@@ -221,3 +225,36 @@ def test_pipeline_command_uses_current_interpreter_not_hardcoded_python3():
 
     assert command[0] == sys.executable
     assert command[0] != "python3"
+
+
+def test_pipeline_command_includes_sync_garmin_by_default():
+    command = scheduler_module._pipeline_command(
+        db_dir="/tmp/DBs",
+        start_time="09:00",
+        cutoff_time="11:00",
+        retry_interval_minutes=5,
+        dry_run=False,
+    )
+
+    assert command[:4] == [
+        sys.executable,
+        "automation/run_daily_pipeline.py",
+        "--sync-garmin",
+        "--db-dir",
+    ]
+    assert command[command.index("--db-dir") + 1] == "/tmp/DBs"
+
+
+def test_pipeline_command_can_intentionally_disable_sync_after_cutoff():
+    command = scheduler_module._pipeline_command(
+        db_dir="/tmp/DBs",
+        start_time="09:00",
+        cutoff_time="11:00",
+        retry_interval_minutes=5,
+        dry_run=False,
+        sync_garmin=False,
+    )
+
+    assert command[0] == sys.executable
+    assert "--sync-garmin" not in command
+    assert command[command.index("--db-dir") + 1] == "/tmp/DBs"

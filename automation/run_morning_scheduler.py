@@ -95,6 +95,7 @@ def run_scheduler(
         now = now_fn()
         today_start = datetime.combine(now.date(), start, tzinfo=now.tzinfo)
         today_cutoff = datetime.combine(now.date(), cutoff, tzinfo=now.tzinfo)
+        in_delivery_window = today_start <= now <= today_cutoff
 
         if now < today_start:
             seconds = _seconds_until(today_start, now)
@@ -108,7 +109,7 @@ def run_scheduler(
             cutoff_time,
             retry_interval_minutes,
             dry_run,
-            sync_garmin=now <= today_cutoff,
+            sync_garmin=in_delivery_window,
         )
         result = _run_pipeline(command, runner)
 
