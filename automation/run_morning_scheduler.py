@@ -1,5 +1,6 @@
 import argparse
 import subprocess
+import sys
 import time
 from datetime import datetime, timedelta
 
@@ -34,7 +35,7 @@ def _pipeline_command(
     sync_garmin=True,
 ):
     command = [
-        "python3",
+        sys.executable,
         "automation/run_daily_pipeline.py",
         "--db-dir",
         db_dir,

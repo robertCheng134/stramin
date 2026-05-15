@@ -1,4 +1,5 @@
 import importlib.util
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -75,11 +76,12 @@ def test_scheduler_within_window_runs_pipeline():
 
     assert len(calls) == 1
     assert calls[0]["command"][:4] == [
-        "python3",
+        sys.executable,
         "automation/run_daily_pipeline.py",
         "--sync-garmin",
         "--db-dir",
     ]
+    assert calls[0]["command"][0] != "python3"
     assert "/tmp/DBs" in calls[0]["command"]
     assert calls[0]["kwargs"] == {
         "check": False,
@@ -108,6 +110,7 @@ def test_scheduler_already_sent_noop_stops_retrying_for_the_day():
     )
 
     assert len(calls) == 1
+    assert calls[0][0] == sys.executable
     assert sleeps and sleeps[0] > 20 * 60 * 60
 
 
@@ -130,6 +133,7 @@ def test_scheduler_successful_send_stops_retrying_for_the_day():
     )
 
     assert len(calls) == 1
+    assert calls[0][0] == sys.executable
     assert sleeps and sleeps[0] > 20 * 60 * 60
 
 
@@ -155,6 +159,8 @@ def test_scheduler_retryable_failure_retries_after_interval():
     )
 
     assert len(calls) == 2
+    assert calls[0][0] == sys.executable
+    assert calls[1][0] == sys.executable
     assert sleeps[0] == 300
 
 
@@ -177,6 +183,7 @@ def test_scheduler_after_cutoff_does_not_loop_forever():
     )
 
     assert len(calls) == 1
+    assert calls[0][0] == sys.executable
     assert "--sync-garmin" not in calls[0]
     assert sleeps and sleeps[0] > 21 * 60 * 60
 
@@ -200,3 +207,17 @@ def test_scheduler_dry_run_passes_dry_run_to_pipeline():
     )
 
     assert "--dry-run" in calls[0]
+    assert calls[0][0] == sys.executable
+
+
+def test_pipeline_command_uses_current_interpreter_not_hardcoded_python3():
+    command = scheduler_module._pipeline_command(
+        db_dir="/tmp/DBs",
+        start_time="09:00",
+        cutoff_time="11:00",
+        retry_interval_minutes=5,
+        dry_run=False,
+    )
+
+    assert command[0] == sys.executable
+    assert command[0] != "python3"
