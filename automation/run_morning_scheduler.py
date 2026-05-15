@@ -95,12 +95,16 @@ def run_scheduler(
         now = now_fn()
         today_start = datetime.combine(now.date(), start, tzinfo=now.tzinfo)
         today_cutoff = datetime.combine(now.date(), cutoff, tzinfo=now.tzinfo)
-        in_delivery_window = today_start <= now <= today_cutoff
 
         if now < today_start:
             seconds = _seconds_until(today_start, now)
             print(f"Before delivery window. Sleeping until {today_start.isoformat()}.")
             sleep_fn(seconds)
+            continue
+
+        if now > today_cutoff:
+            print("Morning window has passed; sleeping until next start time.")
+            _sleep_until_next_start(now, start, sleep_fn)
             continue
 
         command = _pipeline_command(
@@ -109,7 +113,7 @@ def run_scheduler(
             cutoff_time,
             retry_interval_minutes,
             dry_run,
-            sync_garmin=in_delivery_window,
+            sync_garmin=True,
         )
         result = _run_pipeline(command, runner)
 

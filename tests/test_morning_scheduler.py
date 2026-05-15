@@ -168,7 +168,9 @@ def test_scheduler_retryable_failure_retries_after_interval():
     assert sleeps[0] == 300
 
 
-def test_scheduler_after_cutoff_does_not_loop_forever():
+def test_scheduler_after_cutoff_does_not_run_pipeline_and_sleeps_until_next_start(
+    capsys,
+):
     calls = []
     sleeps = []
 
@@ -186,10 +188,12 @@ def test_scheduler_after_cutoff_does_not_loop_forever():
         max_cycles=1,
     )
 
-    assert len(calls) == 1
-    assert calls[0][0] == sys.executable
-    assert "--sync-garmin" not in calls[0]
+    assert calls == []
     assert sleeps and sleeps[0] > 21 * 60 * 60
+    assert (
+        "Morning window has passed; sleeping until next start time."
+        in capsys.readouterr().out
+    )
 
 
 def test_scheduler_dry_run_passes_dry_run_to_pipeline():
@@ -244,17 +248,3 @@ def test_pipeline_command_includes_sync_garmin_by_default():
     ]
     assert command[command.index("--db-dir") + 1] == "/tmp/DBs"
 
-
-def test_pipeline_command_can_intentionally_disable_sync_after_cutoff():
-    command = scheduler_module._pipeline_command(
-        db_dir="/tmp/DBs",
-        start_time="09:00",
-        cutoff_time="11:00",
-        retry_interval_minutes=5,
-        dry_run=False,
-        sync_garmin=False,
-    )
-
-    assert command[0] == sys.executable
-    assert "--sync-garmin" not in command
-    assert command[command.index("--db-dir") + 1] == "/tmp/DBs"
