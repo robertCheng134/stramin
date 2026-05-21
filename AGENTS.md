@@ -16,7 +16,27 @@ and stable rule-based behavior over clever automation.
 - v5 direction: AI coaching, richer personalization, and orchestration.
 - Do not add AI coaching features in v4.
 
-## 3. Architecture Boundaries
+## 3. Mandatory Start-of-Task Checklist
+
+Before making changes, every Codex/contributor session must:
+
+- Read `AGENTS.md` first.
+- Identify the intended change category:
+  - docs-only
+  - tests-only
+  - safe refactor
+  - ingestion/validation
+  - automation/runtime
+  - Telegram/delivery
+  - dependency/setup
+  - AI/v5
+- Identify whether explicit approval is required.
+- Confirm the task is staying inside v4 boundaries unless explicitly approved.
+- State in the handoff that `AGENTS.md` was read.
+
+If `AGENTS.md` was not read, the handoff is incomplete and must be rejected.
+
+## 4. Architecture Boundaries
 
 ```text
 GarminDB / CSV / manual input
@@ -40,7 +60,7 @@ HealthData
 - GPT/AI is optional narrative context only, not decision authority.
 - `recovery_rules.py`, `decision_engine.py`, and `weekly_planner.py` should stay stable unless explicitly requested.
 
-## 4. Change Categories
+## 5. Change Categories
 
 Safe changes:
 
@@ -73,7 +93,21 @@ Requires explicit approval:
 - Destructive git/file operations.
 - Commits or pushes.
 
-## 5. Forbidden Changes
+## 6. Default Prohibitions Unless Explicitly Requested
+
+Do not:
+
+- Commit.
+- Push.
+- Merge.
+- Create tags or releases.
+- Run destructive file operations.
+- Modify production behavior outside the task scope.
+- Add AI/v5 behavior.
+- Expose secrets.
+- Weaken tests.
+
+## 7. Forbidden Changes
 
 Do not:
 
@@ -87,7 +121,7 @@ Do not:
 - Replace deterministic rules with GPT output.
 - Rewrite unrelated modules during focused tasks.
 
-## 6. Testing Expectations
+## 8. Testing Expectations
 
 Default test command:
 
@@ -110,7 +144,7 @@ Testing rules:
 - Do not depend on private local health data.
 - Report tests run and results in the handoff.
 
-## 7. GarminDB Rules
+## 9. GarminDB Rules
 
 Paths:
 
@@ -184,7 +218,7 @@ Known CLI rule:
 
 Use the Stramin wrapper and keep failures visible.
 
-## 8. Deployment / Runtime Rules
+## 10. Deployment / Runtime Rules
 
 - Use `tmux` for long-running sync or pipeline runs until systemd is intentionally added.
 - Validate DB data before publishing Telegram recommendations.
@@ -208,7 +242,7 @@ Detach with `Ctrl-b d`; reattach with:
 tmux attach -t stramin-sync
 ```
 
-## 9. Data Privacy Rules
+## 11. Data Privacy Rules
 
 Never commit:
 
@@ -224,7 +258,20 @@ Never commit:
 
 Also avoid printing secret values in logs, tests, docs, or CLI output.
 
-## 10. Definition of Done
+## 12. Mandatory Handoff Format
+
+Every handoff must include:
+
+- `AGENTS.md` read confirmation.
+- Changed files.
+- Behavior changes.
+- Tests run.
+- Test results.
+- Whether private data or secrets were touched.
+- Whether commit or push was performed.
+- Any risks or follow-up items.
+
+## 13. Definition of Done
 
 Before handoff:
 
