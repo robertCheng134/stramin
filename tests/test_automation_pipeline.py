@@ -1153,3 +1153,41 @@ def test_main_prints_false_for_dry_run_result(monkeypatch, capsys):
         "Daily pipeline ready: latest_recovery_date=2026-05-10; telegram_sent=false"
         in capsys.readouterr().out
     )
+
+
+def test_main_returns_retryable_code_for_sync_failure(monkeypatch, capsys):
+    args = type(
+        "Args",
+        (),
+        {
+            "db_dir": "db",
+            "output": "daily_state.json",
+            "log_dir": "logs",
+            "notification_state": "notification_state.json",
+            "allow_stale": False,
+            "dry_run": False,
+            "sync_garmin": True,
+            "daily_report_time": "09:00",
+            "retry_interval_minutes": 5,
+            "cutoff_time": "11:00",
+        },
+    )()
+    monkeypatch.setattr(run_daily_pipeline_module, "parse_args", lambda: args)
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "run_daily_pipeline",
+        lambda **kwargs: {
+            "status": "sync_failed",
+            "retryable": True,
+            "telegram_sent": False,
+            "sync": {"exit_code": 7},
+        },
+    )
+
+    exit_code = run_daily_pipeline_module.main()
+
+    assert exit_code == 2
+    output = capsys.readouterr().out
+    assert "Daily pipeline sync failed retryable" in output
+    assert "exit_code=7" in output
+    assert "telegram_sent=false" in output

@@ -168,6 +168,59 @@ def test_scheduler_retryable_failure_retries_after_interval():
     assert sleeps[0] == 300
 
 
+def test_scheduler_retries_sync_failure_retry_code():
+    calls = []
+    sleeps = []
+
+    def runner(command, **kwargs):
+        calls.append(command)
+        return FakeResult(
+            2,
+            "Daily pipeline sync failed retryable: exit_code=7; telegram_sent=false",
+        )
+
+    scheduler_module.run_scheduler(
+        retry_interval_minutes=5,
+        now_fn=_now_sequence(
+            _dt("2026-05-12T09:20:00+08:00"),
+            _dt("2026-05-12T09:21:00+08:00"),
+            _dt("2026-05-12T09:26:00+08:00"),
+            _dt("2026-05-12T09:27:00+08:00"),
+        ),
+        sleep_fn=sleeps.append,
+        runner=runner,
+        max_cycles=2,
+    )
+
+    assert len(calls) == 2
+    assert calls[0][0] == sys.executable
+    assert calls[1][0] == sys.executable
+    assert sleeps[0] == 300
+
+
+def test_scheduler_non_retryable_failure_stops_for_day():
+    calls = []
+    sleeps = []
+
+    def runner(command, **kwargs):
+        calls.append(command)
+        return FakeResult(1, "Daily pipeline final failure")
+
+    scheduler_module.run_scheduler(
+        now_fn=_now_sequence(
+            _dt("2026-05-12T09:20:00+08:00"),
+            _dt("2026-05-12T09:21:00+08:00"),
+        ),
+        sleep_fn=sleeps.append,
+        runner=runner,
+        max_cycles=1,
+    )
+
+    assert len(calls) == 1
+    assert calls[0][0] == sys.executable
+    assert sleeps and sleeps[0] > 20 * 60 * 60
+
+
 def test_scheduler_after_cutoff_does_not_run_pipeline_and_sleeps_until_next_start(
     capsys,
 ):
@@ -247,4 +300,3 @@ def test_pipeline_command_includes_sync_garmin_by_default():
         "--db-dir",
     ]
     assert command[command.index("--db-dir") + 1] == "/tmp/DBs"
-

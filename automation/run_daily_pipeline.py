@@ -449,9 +449,11 @@ def main():
         return 0
     if result["status"] == "sync_failed":
         print(
-            "Daily pipeline sync failed: "
+            "Daily pipeline sync failed retryable: "
             f"exit_code={result['sync'].get('exit_code')}; telegram_sent=false"
         )
+        if result.get("retryable"):
+            return 2
         return result["sync"].get("exit_code") or 1
     print(
         "Daily pipeline ready: "

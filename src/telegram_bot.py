@@ -35,10 +35,30 @@ OPTIONAL_ENTRY_FIELDS = {"stress"}
 VALID_HRV_STATUSES = {"balanced", "low", "poor", "unbalanced"}
 ENTRY_SESSIONS = {}
 logger = get_logger(__name__)
+UNAUTHORIZED_CHAT_MESSAGE = "Unauthorized chat."
 
 
 def _metadata_metric(metadata, name):
     return metadata.get("metrics", {}).get(name, {})
+
+
+def _configured_chat_id():
+    load_dotenv()
+    return str(os.getenv("TELEGRAM_CHAT_ID") or "").strip()
+
+
+def _is_authorized_chat(chat_id):
+    configured_chat_id = _configured_chat_id()
+    return bool(configured_chat_id) and str(chat_id).strip() == configured_chat_id
+
+
+def _authorization_error(chat_id):
+    if _is_authorized_chat(chat_id):
+        return None
+
+    ENTRY_SESSIONS.pop(chat_id, None)
+    logger.warning("Rejected unauthorized Telegram chat.")
+    return UNAUTHORIZED_CHAT_MESSAGE
 
 
 def _user_facing_hrv_balance(hrv_metric):
@@ -387,6 +407,10 @@ def _handle_entry_response(chat_id, text):
 
 
 def handle_command(text, chat_id=None):
+    authorization_error = _authorization_error(chat_id)
+    if authorization_error:
+        return authorization_error
+
     command = (text or "").strip().split()[0].lower()
 
     if command == "/start":
@@ -441,6 +465,9 @@ def handle_command(text, chat_id=None):
 
 def handle_message(chat_id, text):
     text = text or ""
+    authorization_error = _authorization_error(chat_id)
+    if authorization_error:
+        return authorization_error
 
     if text.strip().lower() == "/cancel":
         return handle_command(text, chat_id=chat_id)
