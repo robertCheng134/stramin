@@ -18,6 +18,7 @@ from integrations.garmindb import (
 )
 from logger import get_logger
 from recovery_rules import calculate_recovery
+from reports.localization import localized_text as t
 from strava import fetch_recent_activities
 from training_load import analyze_training_load
 from trend_analysis import analyze_recent_trends
@@ -58,7 +59,7 @@ def _authorization_error(chat_id):
 
     ENTRY_SESSIONS.pop(chat_id, None)
     logger.warning("Rejected unauthorized Telegram chat.")
-    return UNAUTHORIZED_CHAT_MESSAGE
+    return t("bot.unauthorized_chat")
 
 
 def _user_facing_hrv_balance(hrv_metric):
@@ -236,27 +237,18 @@ def build_recommendation_context(include_gpt=True):
 
 
 def help_text():
-    return (
-        "stramin Telegram Bot\n\n"
-        "Commands:\n"
-        "/start - Start the bot\n"
-        "/help - Show available commands\n"
-        "/today - Generate today's Garmin-first recovery recommendation\n"
-        "/weekly - Generate the weekly adaptive training plan\n"
-        "/entry - Enter today's Garmin health data\n"
-        "/cancel - Cancel the current entry flow"
-    )
+    return t("bot.help")
 
 
 def _entry_prompt(field):
     prompts = {
-        "sleep_hours": "Enter sleep_hours (0-24, decimal allowed):",
-        "hrv_status": "Enter hrv_status (balanced, low, poor, unbalanced):",
-        "body_battery": "Enter body_battery (0-100):",
-        "resting_hr": "Enter resting_hr (20-120):",
-        "stress": "Enter stress (optional, send '-' to skip):",
+        "sleep_hours": "entry.sleep_hours",
+        "hrv_status": "entry.hrv_status",
+        "body_battery": "entry.body_battery",
+        "resting_hr": "entry.resting_hr",
+        "stress": "entry.stress",
     }
-    return prompts[field]
+    return t(prompts[field])
 
 
 def _validate_float(value, min_value, max_value, label):
@@ -363,11 +355,7 @@ def _start_entry_flow(chat_id):
         "field_index": 0,
         "entry": {"date": today},
     }
-    return (
-        f"Starting Garmin entry for {today}.\n"
-        "Send /cancel anytime to stop.\n\n"
-        f"{_entry_prompt(ENTRY_FIELDS[0])}"
-    )
+    return t("bot.entry_start", date=today, prompt=_entry_prompt(ENTRY_FIELDS[0]))
 
 
 def _complete_entry_flow(chat_id, session):
@@ -377,14 +365,10 @@ def _complete_entry_flow(chat_id, session):
 
     try:
         recommendation = build_recommendation_context()["daily_report"]
-        return (
-            "Garmin health entry saved.\n\n"
-            "Today's recommendation:\n\n"
-            f"{recommendation}"
-        )
+        return t("bot.entry_saved", recommendation=recommendation)
     except Exception as error:
         logger.exception("Failed to generate recommendation after Telegram entry")
-        return f"Garmin health entry saved, but recommendation failed: {error}"
+        return t("bot.entry_saved_recommendation_failed", error=error)
 
 
 def _handle_entry_response(chat_id, text):
@@ -414,12 +398,7 @@ def handle_command(text, chat_id=None):
     command = (text or "").strip().split()[0].lower()
 
     if command == "/start":
-        return (
-            "Welcome to stramin.\n\n"
-            "Garmin CSV is the primary health data source. "
-            "Use /entry to add today's metrics, /today for today's recommendation, "
-            "or /weekly for the weekly plan."
-        )
+        return t("bot.start")
 
     if command == "/help":
         return help_text()
@@ -451,16 +430,16 @@ def handle_command(text, chat_id=None):
 
     if command == "/entry":
         if chat_id is None:
-            return "Entry flow requires a Telegram chat."
+            return t("bot.entry_requires_chat")
         return _start_entry_flow(chat_id)
 
     if command == "/cancel":
         if chat_id is not None and chat_id in ENTRY_SESSIONS:
             ENTRY_SESSIONS.pop(chat_id, None)
-            return "Entry canceled."
-        return "No active entry flow to cancel."
+            return t("bot.entry_canceled")
+        return t("bot.entry_no_active")
 
-    return "Unknown command. Use /help to see available commands."
+    return t("bot.unknown_command")
 
 
 def handle_message(chat_id, text):
@@ -478,7 +457,7 @@ def handle_message(chat_id, text):
     if text.startswith("/"):
         return handle_command(text, chat_id=chat_id)
 
-    return "Send /help to see available commands."
+    return t("bot.help_hint")
 
 
 def _telegram_url(token, method):

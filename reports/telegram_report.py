@@ -1,9 +1,11 @@
 from datetime import date, timedelta
 
+from reports.localization import localized_text as t
+
 
 def _value_or_unknown(value):
     if value in (None, ""):
-        return "unavailable"
+        return t("common.unavailable")
     return value
 
 
@@ -85,9 +87,7 @@ def _decision_value(decision, key):
 def _finalized_data_note(latest_recovery_date):
     yesterday = (date.today() - timedelta(days=1)).isoformat()
     if latest_recovery_date == yesterday:
-        return (
-            f"Latest finalized Garmin recovery data is from {latest_recovery_date}."
-        )
+        return t("report.finalized_data", date=latest_recovery_date)
     return ""
 
 
@@ -105,8 +105,8 @@ def format_daily_telegram_report(daily_state, recommendation_preview=None):
     )
 
     lines = [
-        "🌅 Stramin Daily Recovery",
-        f"Recovery date: {_value_or_unknown(latest_recovery_date)}",
+        f"🌅 {t('report.title')}",
+        f"{t('report.recovery_date')}: {_value_or_unknown(latest_recovery_date)}",
     ]
     finalized_note = _finalized_data_note(latest_recovery_date)
     if finalized_note:
@@ -115,40 +115,40 @@ def format_daily_telegram_report(daily_state, recommendation_preview=None):
     lines.extend(
         [
             "",
-            "📊 Garmin recovery",
-            f"Sleep: {_format_float(daily_state.get('sleep_hours'), suffix='h')}",
-            f"HRV: {_format_int(hrv.get('hrv_value'), suffix=' ms')}",
-            f"Stress: {_format_int(daily_state.get('stress'))}",
+            f"📊 {t('report.garmin_recovery')}",
+            f"{t('report.sleep')}: {_format_float(daily_state.get('sleep_hours'), suffix='h')}",
+            f"{t('report.hrv')}: {_format_int(hrv.get('hrv_value'), suffix=' ms')}",
+            f"{t('report.stress')}: {_format_int(daily_state.get('stress'))}",
         ]
     )
 
     if daily_state.get("resting_hr") not in (None, ""):
         lines.append(
-            f"Resting HR: {_format_int(daily_state['resting_hr'], suffix=' bpm')}"
+            f"{t('report.resting_hr')}: {_format_int(daily_state['resting_hr'], suffix=' bpm')}"
         )
 
     lines.extend(
         [
             "",
-            "Recovery status:",
+            f"{t('report.recovery_status')}:",
             _humanize_hrv_balance(hrv.get("hrv_balance")),
             "",
-            "🏃 Today's recommendation:",
+            f"🏃 {t('report.today_recommendation')}:",
             _humanize_token(_decision_value(decision, "decision")),
             "",
-            "Intensity:",
+            f"{t('report.intensity')}:",
             _humanize_token(_decision_value(decision, "intensity")),
             "",
-            "Suggested activity:",
+            f"{t('report.suggested_activity')}:",
             _humanize_token(_decision_value(decision, "suggested_activity")),
             "",
-            "Plan:",
+            f"{t('report.plan')}:",
             _humanize_plan(
                 recommendation_preview.get("recommendation")
                 or daily_state.get("recommendation")
             ),
             "",
-            "Why:",
+            f"{t('report.why')}:",
             _shorten_rationale(rationale),
         ]
     )
@@ -158,10 +158,10 @@ def format_daily_telegram_report(daily_state, recommendation_preview=None):
 
 def format_warning_telegram_report(reason, latest_recovery_date=""):
     lines = [
-        "⚠️ Stramin Daily Report Delayed",
-        "No training recommendation was sent.",
+        f"⚠️ {t('warning.title')}",
+        t("warning.no_recommendation"),
     ]
     if latest_recovery_date:
-        lines.append(f"Recovery date: {latest_recovery_date}")
-    lines.append(f"Reason: {_value_or_unknown(reason)}")
+        lines.append(f"{t('report.recovery_date')}: {latest_recovery_date}")
+    lines.append(f"{t('warning.reason')}: {_value_or_unknown(reason)}")
     return "\n".join(lines)

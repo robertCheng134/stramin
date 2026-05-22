@@ -203,12 +203,16 @@ Common `.env` values:
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token_here
 TELEGRAM_CHAT_ID=your_chat_id_here
+STRAMIN_LANGUAGE=zh-TW
 STRAVA_ACCESS_TOKEN=your_token_here
 OPENAI_API_KEY=your_key_here
 ```
 
 `automation/bootstrap.py --interactive` fills GarminDB path defaults
 automatically. Normal users should not manually set GarminDB paths.
+
+`STRAMIN_LANGUAGE` controls user-facing Telegram text. Supported values are
+`en` and `zh-TW`; unsupported values fall back to English.
 
 Automation timing:
 

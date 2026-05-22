@@ -39,6 +39,16 @@ def test_help_command_lists_commands():
     assert "/cancel" in response
 
 
+def test_help_command_supports_zh_tw(monkeypatch):
+    monkeypatch.setenv("STRAMIN_LANGUAGE", "zh-TW")
+
+    response = telegram_bot.handle_command("/help", chat_id=AUTHORIZED_CHAT_ID)
+
+    assert "stramin Telegram 機器人" in response
+    assert "指令:" in response
+    assert "/today - 產生今日 Garmin-first 恢復建議" in response
+
+
 def test_unauthorized_chat_is_rejected():
     response = telegram_bot.handle_message(UNAUTHORIZED_CHAT_ID, "/help")
 

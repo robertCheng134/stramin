@@ -66,6 +66,7 @@ def _write_env_file(path, values):
         "GARMIN_PASSWORD",
         "GARMINDB_DIR",
         "GARMINDB_PATH",
+        "STRAMIN_LANGUAGE",
         "OPENAI_API_KEY",
         "STRAVA_ACCESS_TOKEN",
     ]

@@ -26,6 +26,7 @@ python3 automation/bootstrap.py --interactive
 - auto-fills:
   - `GARMINDB_DIR=~/HealthData/DBs`
   - `GARMINDB_PATH=~/HealthData/DBs/garmin.db`
+- preserves `STRAMIN_LANGUAGE` from `.env.example` or `.env` when present
 - verifies GarminDB tooling through the virtualenv
 - prints Stramin-level next steps
 
@@ -44,6 +45,17 @@ Stramin prompts only for user-owned secrets:
 
 After successful setup, Stramin writes `~/.stramin.env.backup` so future clones
 can restore local secrets automatically.
+
+## Telegram Language
+
+User-facing Telegram text can be localized with:
+
+```env
+STRAMIN_LANGUAGE=zh-TW
+```
+
+Supported values are `en` and `zh-TW`. Unsupported values fall back to English.
+Normal users can keep the value created from `.env.example`.
 
 ## What Users Should Not Do
 
