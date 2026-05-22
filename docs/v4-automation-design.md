@@ -41,7 +41,9 @@ Required checks:
 - `~/HealthData/DBs/garmin_monitoring.db` exists when HRV fallback is needed
 - `hrv`, `sleep`, `stress`, `resting_hr`, `daily_summary` tables are queryable
 - latest finalized recovery date is acceptable
-- stress selection skips invalid negative rows
+- stress uses official `daily_summary.stress_avg`; if it is missing for the
+  recovery date, stress remains unavailable rather than falling back to raw
+  `stress` samples
 - recommendation preview can be generated
 
 If validation fails, do not publish a Telegram recommendation.

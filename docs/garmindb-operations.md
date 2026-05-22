@@ -130,7 +130,7 @@ python3 scripts/preview_garmindb_recommendation.py --db-dir ~/HealthData/DBs
 
 - production freshness: `garmin.db.daily_summary.day`
 - resting HR: prefer `garmin.db.daily_summary.rhr`
-- stress: prefer `garmin.db.daily_summary.stress_avg`
+- stress: use `garmin.db.daily_summary.stress_avg` as the official v4 source
 - body battery: prefer `garmin.db.daily_summary.bb_charged`, then `bb_max`, then `bb_min`
 - waking respiration: `garmin.db.daily_summary.rr_waking_avg`
 - sleep: use raw `garmin.db.sleep.total_sleep` only as same-day supplemental data
@@ -139,7 +139,16 @@ python3 scripts/preview_garmindb_recommendation.py --db-dir ~/HealthData/DBs
 - HRV 5-minute high: `last_night_5min_high` or monitoring fallback
   `last_night_average`
 
-Negative stress values are invalid/unclassified and are skipped.
+Stress source decision:
+
+- If `daily_summary` exists for the recovery date but `stress_avg` is missing,
+  keep stress unavailable/blank.
+- Do not fallback to raw `garmin.db.stress` rows for v4 recommendation context.
+- Raw stress samples and daily summary stress do not have the same Garmin product
+  semantics. Missing official daily summary stress is safer than silently
+  substituting lower-level raw stress.
+- Negative raw stress values are invalid/unclassified, but raw stress is not the
+  official v4 stress source.
 
 ## Production Freshness Findings
 

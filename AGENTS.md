@@ -180,6 +180,10 @@ Safety rules:
 - GarminDB schemas can vary; inspect actual SQLite schema before changing SQL.
 - Validate assumptions with real table/column checks where practical.
 - Keep GarminDB-specific assumptions documented.
+- v4 stress source is `daily_summary.stress_avg` only.
+- If `daily_summary` exists for the recovery date but `stress_avg` is missing, keep stress unavailable/blank.
+- Do not substitute raw `stress` table rows for official daily summary stress.
+- Raw stress rows and daily summary stress have different product semantics; mixing them can mislead recommendations.
 
 Ordering rules:
 
