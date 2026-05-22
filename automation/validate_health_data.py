@@ -88,6 +88,15 @@ def validate_garmindb(db_dir=DEFAULT_DB_DIR, allow_stale=False, log_dir=DEFAULT_
     days_old = _days_old(latest_date, current_date)
     is_stale = days_old > 1
 
+    if days_old < 0:
+        _fail_validation(
+            logger,
+            (
+                f"latest recovery date {latest_date} is in the future; "
+                f"current date is {current_date}"
+            ),
+        )
+
     if is_stale and not allow_stale:
         _fail_validation(
             logger,

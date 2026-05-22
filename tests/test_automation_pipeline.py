@@ -538,6 +538,18 @@ def test_validate_garmindb_fails_two_days_old_latest_data(tmp_path, monkeypatch)
         validate_health_data_module.validate_garmindb(db_dir=db_dir)
 
 
+def test_validate_garmindb_fails_future_latest_data(tmp_path, monkeypatch):
+    db_dir = tmp_path / "DBs"
+    _create_valid_garmindb(db_dir, day="2026-05-11")
+    monkeypatch.setattr(validate_health_data_module, "today_iso", lambda: "2026-05-10")
+
+    with pytest.raises(
+        validate_health_data_module.GarminDBImportError,
+        match="latest recovery date 2026-05-11 is in the future; current date is 2026-05-10",
+    ):
+        validate_health_data_module.validate_garmindb(db_dir=db_dir)
+
+
 def test_run_daily_pipeline_validation_failure_before_cutoff_is_retryable(
     tmp_path,
     monkeypatch,
@@ -620,6 +632,107 @@ def test_run_daily_pipeline_validation_failure_after_cutoff_is_final_failure(
     assert "No training recommendation was sent." in sent_messages[0]
     assert "Recommendation\n" not in sent_messages[0]
     written_state = json.loads(notification_state.read_text(encoding="utf-8"))
+    assert written_state["retry_count"] == 1
+    assert written_state["final_failure_sent"] is True
+
+
+def test_run_daily_pipeline_final_failure_warning_sends_once_per_local_date(
+    tmp_path,
+    monkeypatch,
+):
+    output = tmp_path / "daily_state.json"
+    notification_state = tmp_path / "notification_state.json"
+
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "sync_garmindb",
+        lambda log_dir: {"status": "skipped_manual_sync_required"},
+    )
+
+    def fail_validation(**kwargs):
+        raise run_daily_pipeline_module.GarminDBImportError("validation failed")
+
+    monkeypatch.setattr(run_daily_pipeline_module, "validate_garmindb", fail_validation)
+    sent_messages = []
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "send_message",
+        lambda text: sent_messages.append(text) or {"success": True, "message": "sent"},
+    )
+
+    first_result = run_daily_pipeline_module.run_daily_pipeline(
+        db_dir=tmp_path,
+        output=output,
+        log_dir=tmp_path / "logs",
+        notification_state_path=notification_state,
+        current_datetime=datetime.fromisoformat("2026-05-10T11:05:00+08:00"),
+    )
+    second_result = run_daily_pipeline_module.run_daily_pipeline(
+        db_dir=tmp_path,
+        output=output,
+        log_dir=tmp_path / "logs",
+        notification_state_path=notification_state,
+        current_datetime=datetime.fromisoformat("2026-05-10T11:10:00+08:00"),
+    )
+
+    assert first_result["status"] == "final_failure"
+    assert second_result["status"] == "final_failure"
+    assert len(sent_messages) == 1
+    assert second_result["telegram_send_result"]["reason"] == "already_sent"
+    written_state = json.loads(notification_state.read_text(encoding="utf-8"))
+    assert written_state["retry_count"] == 2
+    assert written_state["final_failure_sent"] is True
+
+
+def test_run_daily_pipeline_final_failure_warning_can_send_next_local_date(
+    tmp_path,
+    monkeypatch,
+):
+    output = tmp_path / "daily_state.json"
+    notification_state = tmp_path / "notification_state.json"
+    notification_state.write_text(
+        json.dumps(
+            {
+                "date": "2026-05-10",
+                "telegram_sent": False,
+                "sent_at": "",
+                "last_attempt_at": "",
+                "retry_count": 1,
+                "final_failure_sent": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "sync_garmindb",
+        lambda log_dir: {"status": "skipped_manual_sync_required"},
+    )
+
+    def fail_validation(**kwargs):
+        raise run_daily_pipeline_module.GarminDBImportError("validation failed")
+
+    monkeypatch.setattr(run_daily_pipeline_module, "validate_garmindb", fail_validation)
+    sent_messages = []
+    monkeypatch.setattr(
+        run_daily_pipeline_module,
+        "send_message",
+        lambda text: sent_messages.append(text) or {"success": True, "message": "sent"},
+    )
+
+    result = run_daily_pipeline_module.run_daily_pipeline(
+        db_dir=tmp_path,
+        output=output,
+        log_dir=tmp_path / "logs",
+        notification_state_path=notification_state,
+        current_datetime=datetime.fromisoformat("2026-05-11T11:05:00+08:00"),
+    )
+
+    assert result["status"] == "final_failure"
+    assert len(sent_messages) == 1
+    written_state = json.loads(notification_state.read_text(encoding="utf-8"))
+    assert written_state["date"] == "2026-05-11"
     assert written_state["retry_count"] == 1
     assert written_state["final_failure_sent"] is True
 

@@ -207,6 +207,14 @@ def _handle_validation_failure(
     if dry_run:
         print(warning_message)
         logger.info("Dry-run Telegram warning preview:\n%s", warning_message)
+    elif notification_state.get("final_failure_sent"):
+        warning_send_result = {
+            "success": False,
+            "reason": "already_sent",
+            "message": "Final failure warning already sent for today.",
+        }
+        logger.info("Final failure warning already sent for today; no-op")
+        _save_notification_state(notification_state_path, notification_state)
     else:
         warning_send_result = send_message(warning_message)
         if warning_send_result.get("success"):
